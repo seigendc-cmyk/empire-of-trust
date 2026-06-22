@@ -30,6 +30,10 @@ export function ChapterForm({ episodeId, chapter, onSaved }: Props) {
           previousEpisodeBridge: stringValue(formData, "previousEpisodeBridge"),
           emotionalTone: stringValue(formData, "emotionalTone"),
           sceneLocation: stringValue(formData, "sceneLocation"),
+          scenePropertyId: stringValue(formData, "scenePropertyId"),
+          sceneLocationText: stringValue(formData, "sceneLocationText"),
+          sceneVehicleIds: stringValue(formData, "sceneVehicleIds").split(/[\n,;]+/).map((item) => item.trim()).filter(Boolean),
+          featuredCharacterIds: stringValue(formData, "featuredCharacterIds").split(/[\n,;]+/).map((item) => item.trim()).filter(Boolean),
         };
         const errors = validateChapterInput(input);
         if (errors.length > 0) {
@@ -71,6 +75,22 @@ export function ChapterForm({ episodeId, chapter, onSaved }: Props) {
       <label>
         <span className="label">Scene location</span>
         <input className="field" name="sceneLocation" defaultValue={chapter?.sceneLocation ?? ""} />
+      </label>
+      <label>
+        <span className="label">Scene property ID</span>
+        <input className="field" name="scenePropertyId" defaultValue={chapter?.scenePropertyId ?? ""} />
+      </label>
+      <label>
+        <span className="label">Scene location text</span>
+        <input className="field" name="sceneLocationText" defaultValue={chapter?.sceneLocationText ?? ""} />
+      </label>
+      <label className="sm:col-span-2">
+        <span className="label">Scene vehicle IDs</span>
+        <textarea className="field min-h-20" name="sceneVehicleIds" defaultValue={chapter?.sceneVehicleIds?.join("\n") ?? ""} placeholder="One scene vehicle ID per line." />
+      </label>
+      <label className="sm:col-span-2">
+        <span className="label">Featured character IDs</span>
+        <textarea className="field min-h-20" name="featuredCharacterIds" defaultValue={chapter?.featuredCharacterIds?.join("\n") ?? ""} placeholder="One master character ID per line." />
       </label>
       <div className="sticky-actions sm:col-span-2">
         {error && <p className="text-sm font-semibold text-ember">{error}</p>}

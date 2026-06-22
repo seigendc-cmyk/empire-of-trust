@@ -20,9 +20,9 @@ export function PageHeader({ eyebrow, title, subtitle, actions = [], menuItems =
   return (
     <header className="page-header">
       <div className="min-w-0">
-        {eyebrow && <p className="text-xs font-bold uppercase tracking-[0.18em] text-signal">{eyebrow}</p>}
-        <h1 className="mt-1 truncate text-2xl font-black sm:text-3xl">{title}</h1>
-        {subtitle && <p className="mt-2 line-clamp-2 text-sm leading-6 text-paper/65">{subtitle}</p>}
+        {eyebrow && <p className="text-accent text-xs font-bold uppercase tracking-[0.18em]">{eyebrow}</p>}
+        <h1 className="text-app mt-1 truncate text-2xl font-black sm:text-3xl">{title}</h1>
+        {subtitle && <p className="text-muted mt-2 line-clamp-2 text-sm leading-6">{subtitle}</p>}
       </div>
       <div className="flex shrink-0 items-center gap-2">
         <div className="hidden gap-2 sm:flex">

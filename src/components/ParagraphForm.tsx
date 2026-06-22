@@ -38,6 +38,11 @@ export function ParagraphForm({ episodeId, chapters, paragraph, canDeleteDraft =
           culturalDetail: stringValue(formData, "culturalDetail"),
           businessContinuityNote: stringValue(formData, "businessContinuityNote"),
           interactiveLinksJson: stringValue(formData, "interactiveLinksJson", "[]"),
+          mentionedCharacterIds: stringValue(formData, "mentionedCharacterIds").split(/[\n,;]+/).map((item) => item.trim()).filter(Boolean),
+          mentionedProperties: stringValue(formData, "mentionedProperties").split(/[\n,;]+/).map((item) => item.trim()).filter(Boolean),
+          propertyInteractionPrompt: stringValue(formData, "propertyInteractionPrompt"),
+          mentionedVehicles: stringValue(formData, "mentionedVehicles").split(/[\n,;]+/).map((item) => item.trim()).filter(Boolean),
+          vehicleInteractionPrompt: stringValue(formData, "vehicleInteractionPrompt"),
         };
         const errors = validateParagraphInput(input);
         if (errors.length > 0) {
@@ -86,6 +91,26 @@ export function ParagraphForm({ episodeId, chapters, paragraph, canDeleteDraft =
           <input className="field" name={name} defaultValue={(paragraph as unknown as Record<string, string> | undefined)?.[name] ?? ""} />
         </label>
       ))}
+      <label className="sm:col-span-2">
+        <span className="label">Mentioned character IDs</span>
+        <textarea className="field min-h-20" name="mentionedCharacterIds" defaultValue={paragraph?.mentionedCharacterIds?.join("\n") ?? ""} placeholder="One master character ID per line." />
+      </label>
+      <label className="sm:col-span-2">
+        <span className="label">Mentioned property IDs</span>
+        <textarea className="field min-h-20" name="mentionedProperties" defaultValue={paragraph?.mentionedProperties?.join("\n") ?? ""} placeholder="One property ID per line." />
+      </label>
+      <label className="sm:col-span-2">
+        <span className="label">Property interaction prompt</span>
+        <textarea className="field min-h-20" name="propertyInteractionPrompt" defaultValue={paragraph?.propertyInteractionPrompt ?? ""} />
+      </label>
+      <label className="sm:col-span-2">
+        <span className="label">Mentioned vehicle IDs</span>
+        <textarea className="field min-h-20" name="mentionedVehicles" defaultValue={paragraph?.mentionedVehicles?.join("\n") ?? ""} placeholder="One vehicle ID per line." />
+      </label>
+      <label className="sm:col-span-2">
+        <span className="label">Vehicle interaction prompt</span>
+        <textarea className="field min-h-20" name="vehicleInteractionPrompt" defaultValue={paragraph?.vehicleInteractionPrompt ?? ""} />
+      </label>
       <div className="sticky-actions sm:col-span-2">
         {error && <p className="text-sm font-semibold text-ember">{error}</p>}
         {saved && <p className="text-sm font-semibold text-ledger">Paragraph saved.</p>}

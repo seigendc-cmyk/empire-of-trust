@@ -3,12 +3,65 @@
 @tailwind utilities;
 
 :root {
-  color: #f5f2ea;
-  background: #111111;
+  --bg: #111111;
+  --panel: rgba(255, 255, 255, 0.045);
+  --panel-muted: #202124;
+  --text: #f5f2ea;
+  --text-muted: rgba(245, 242, 234, 0.65);
+  --text-soft: rgba(245, 242, 234, 0.48);
+  --border: rgba(255, 255, 255, 0.12);
+  --accent: #b8924b;
+  --accent-strong: #d1b064;
+  --success: #2f6f63;
+  --danger: #8e3b2f;
+  --warning: #b8924b;
+  --nav-bg: rgba(17, 17, 17, 0.95);
+  --nav-active: rgba(255, 255, 255, 0.1);
+  --field-bg: rgba(0, 0, 0, 0.25);
+  --button-bg: rgba(255, 255, 255, 0.1);
+  --button-primary-text: #111111;
+  --shadow: rgba(0, 0, 0, 0.2);
+  --color-bg: 17 17 17;
+  --color-panel-muted: 32 33 36;
+  --color-border: 255 255 255;
+  --color-text: 245 242 234;
+  --color-accent: 184 146 75;
+  --color-success: 47 111 99;
+  --color-danger: 142 59 47;
+  color: var(--text);
+  background: var(--bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+:root[data-theme="light"] {
+  --bg: #f7f5ef;
+  --panel: #ffffff;
+  --panel-muted: #ece8dd;
+  --text: #1d1d1b;
+  --text-muted: #4f514d;
+  --text-soft: #6a665d;
+  --border: #cfc8b8;
+  --accent: #b89445;
+  --accent-strong: #8a6728;
+  --success: #356b4f;
+  --danger: #9a342b;
+  --warning: #9a6a1f;
+  --nav-bg: #ebe6d9;
+  --nav-active: #d6c28a;
+  --field-bg: rgba(255, 255, 255, 0.82);
+  --button-bg: rgba(255, 255, 255, 0.76);
+  --button-primary-text: #1d1d1b;
+  --shadow: rgba(29, 29, 27, 0.08);
+  --color-bg: 247 245 239;
+  --color-panel-muted: 236 232 221;
+  --color-border: 207 200 184;
+  --color-text: 29 29 27;
+  --color-accent: 184 148 69;
+  --color-success: 53 107 79;
+  --color-danger: 154 52 43;
 }
 
 * {
@@ -24,7 +77,7 @@ body {
   overscroll-behavior-y: none;
   background:
     linear-gradient(120deg, rgba(184, 146, 75, 0.12), transparent 34%),
-    linear-gradient(180deg, #111111 0%, #202124 100%);
+    linear-gradient(180deg, var(--bg) 0%, var(--panel-muted) 100%);
 }
 
 button,
@@ -32,6 +85,7 @@ input,
 textarea,
 select {
   font: inherit;
+  min-width: 0;
 }
 
 button,
@@ -46,9 +100,73 @@ canvas {
   max-width: 100%;
 }
 
+pre,
+code {
+  max-width: 100%;
+}
+
+details,
+summary {
+  min-width: 0;
+}
+
 @layer components {
   .shell {
-    @apply min-h-screen bg-ink text-paper;
+    background: var(--bg);
+    color: var(--text);
+    @apply min-h-screen;
+  }
+
+  .text-app {
+    color: var(--text);
+  }
+
+  .text-muted {
+    color: var(--text-muted);
+  }
+
+  .text-soft {
+    color: var(--text-soft);
+  }
+
+  .text-danger {
+    color: var(--danger);
+  }
+
+  .text-success {
+    color: var(--success);
+  }
+
+  .text-warning {
+    color: var(--warning);
+  }
+
+  .text-accent {
+    color: var(--accent);
+  }
+
+  .surface {
+    background: var(--panel);
+    color: var(--text);
+  }
+
+  .surface-muted {
+    background: var(--panel-muted);
+    color: var(--text);
+  }
+
+  .border-app {
+    border-color: var(--border);
+  }
+
+  .nav-surface {
+    background: var(--nav-bg);
+    color: var(--text);
+  }
+
+  .nav-active {
+    background: var(--nav-active);
+    color: var(--text);
   }
 
   .app-frame {
@@ -63,7 +181,9 @@ canvas {
     padding-top: max(0.75rem, env(safe-area-inset-top));
     padding-left: max(1rem, env(safe-area-inset-left));
     padding-right: max(1rem, env(safe-area-inset-right));
-    @apply sticky top-0 z-20 flex min-h-16 items-center justify-between gap-3 border-b border-white/10 bg-ink/95 pb-3 backdrop-blur lg:hidden;
+    background: var(--nav-bg);
+    border-color: var(--border);
+    @apply sticky top-0 z-20 flex min-h-16 items-center justify-between gap-3 border-b pb-3 backdrop-blur lg:hidden;
   }
 
   .app-content {
@@ -72,7 +192,9 @@ canvas {
   }
 
   .topbar {
-    @apply sticky top-0 z-20 border-b border-white/10 bg-ink/95 backdrop-blur;
+    background: var(--nav-bg);
+    border-color: var(--border);
+    @apply sticky top-0 z-20 border-b backdrop-blur;
   }
 
   .page {
@@ -80,46 +202,88 @@ canvas {
   }
 
   .panel {
-    @apply border border-white/10 bg-white/[0.045] shadow-2xl shadow-black/20;
+    background: var(--panel);
+    border-color: var(--border);
+    box-shadow: 0 20px 40px var(--shadow);
+    @apply min-w-0 border;
   }
 
   .field {
-    @apply min-h-12 w-full border border-white/15 bg-black/25 px-3 py-3 text-base text-paper outline-none transition placeholder:text-paper/35 focus:border-signal sm:text-sm;
+    background: var(--field-bg);
+    border-color: var(--border);
+    color: var(--text);
+    @apply min-h-12 w-full border px-3 py-3 text-base outline-none transition focus:border-signal sm:text-sm;
+  }
+
+  .field::placeholder {
+    color: var(--text-soft);
+    opacity: 1;
   }
 
   .label {
-    @apply mb-1 block text-xs font-semibold uppercase tracking-[0.16em] text-paper/60;
+    color: var(--text-muted);
+    @apply mb-1 block text-xs font-semibold uppercase tracking-[0.16em];
   }
 
   .btn {
-    @apply inline-flex min-h-12 items-center justify-center gap-2 border border-white/15 bg-white/10 px-4 py-3 text-sm font-semibold text-paper transition hover:border-signal hover:bg-signal hover:text-ink disabled:cursor-not-allowed disabled:opacity-50;
+    background: var(--button-bg);
+    border-color: var(--border);
+    color: var(--text);
+    @apply inline-flex min-h-12 min-w-0 items-center justify-center gap-2 whitespace-normal break-words border px-4 py-3 text-center text-sm font-semibold transition hover:border-signal hover:bg-signal disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .btn:hover {
+    color: var(--button-primary-text);
   }
 
   .btn-primary {
-    @apply border-signal bg-signal text-ink hover:bg-paper;
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--button-primary-text);
+    @apply hover:bg-paper;
+  }
+
+  .btn-primary:hover {
+    color: var(--bg);
+  }
+
+  :root[data-theme="light"] .btn-primary:hover {
+    background: var(--accent-strong);
+    color: #ffffff;
   }
 
   .nav-link {
-    @apply border-b-2 border-transparent px-2 py-4 text-sm font-semibold text-paper/70 hover:text-paper;
+    color: var(--text-muted);
+    @apply border-b-2 border-transparent px-2 py-4 text-sm font-semibold;
+  }
+
+  .nav-link:hover {
+    color: var(--text);
   }
 
   .nav-link-active {
-    @apply border-signal text-paper;
+    color: var(--text);
+    @apply border-signal;
   }
 
   .mobile-bottom-nav {
     padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
     padding-left: max(0.5rem, env(safe-area-inset-left));
     padding-right: max(0.5rem, env(safe-area-inset-right));
-    @apply fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-white/10 bg-ink/95 pt-2 backdrop-blur lg:hidden;
+    background: var(--nav-bg);
+    border-color: var(--border);
+    @apply fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t pt-2 backdrop-blur lg:hidden;
   }
 
   .mobile-tab {
-    @apply flex min-h-16 min-w-0 flex-col items-center justify-center gap-1 border border-transparent px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-paper/55;
+    color: var(--text-soft);
+    @apply flex min-h-16 min-w-0 flex-col items-center justify-center gap-1 border border-transparent px-1 text-[11px] font-bold uppercase tracking-[0.08em];
   }
 
   .mobile-tab-active {
-    @apply border-white/10 bg-white/10 text-signal;
+    background: var(--nav-active);
+    border-color: var(--border);
+    @apply text-signal;
   }
 
   .mobile-tab-glyph {
@@ -127,35 +291,58 @@ canvas {
   }
 
   .desktop-sidebar {
-    @apply sticky top-0 hidden h-dvh min-h-dvh flex-col border-r border-white/10 bg-black/20 lg:flex;
+    background: var(--nav-bg);
+    border-color: var(--border);
+    @apply sticky top-0 hidden h-dvh min-h-dvh flex-col border-r lg:flex;
   }
 
   .side-link {
-    @apply border border-transparent px-3 py-3 text-sm font-bold text-paper/60 hover:border-white/10 hover:bg-white/5 hover:text-paper;
+    color: var(--text-muted);
+    @apply border border-transparent px-3 py-3 text-sm font-bold hover:border-signal hover:bg-white/5;
+  }
+
+  .side-link:hover {
+    color: var(--text);
   }
 
   .side-link-active {
-    @apply border-signal bg-signal text-ink hover:bg-signal hover:text-ink;
+    background: var(--nav-active);
+    color: var(--text);
+    @apply border-signal hover:border-signal;
   }
 
   .status-badge {
-    @apply inline-flex min-h-8 items-center gap-2 border bg-black/20 px-2 text-xs font-bold uppercase tracking-[0.12em];
+    background: var(--field-bg);
+    @apply inline-flex min-h-8 items-center gap-2 border px-2 text-xs font-bold uppercase tracking-[0.12em];
   }
 
   .icon-button {
-    @apply grid h-11 w-11 place-items-center border border-white/15 bg-white/10 text-2xl font-black leading-none text-paper hover:border-signal hover:bg-signal hover:text-ink;
+    background: var(--button-bg);
+    border-color: var(--border);
+    color: var(--text);
+    @apply grid h-11 w-11 place-items-center border text-2xl font-black leading-none hover:border-signal hover:bg-signal hover:text-ink;
   }
 
   .menu-item {
-    @apply block min-h-12 border-b border-white/10 px-3 py-3 text-sm font-semibold text-paper/80 hover:bg-signal hover:text-ink;
+    border-color: var(--border);
+    color: var(--text);
+    @apply block min-h-12 border-b px-3 py-3 text-sm font-semibold hover:bg-signal;
+  }
+
+  .menu-item:hover {
+    color: var(--button-primary-text);
   }
 
   .page-header {
-    @apply mb-4 grid min-w-0 gap-3 border-b border-white/10 pb-4 sm:flex sm:items-start sm:justify-between;
+    border-color: var(--border);
+    @apply mb-4 grid min-w-0 gap-3 border-b pb-4 sm:flex sm:items-start sm:justify-between;
   }
 
   .state-panel {
-    @apply border border-white/10 bg-white/[0.045] p-5 text-paper/75;
+    background: var(--panel);
+    border-color: var(--border);
+    color: var(--text-muted);
+    @apply border p-5;
   }
 
   .phone-grid {
@@ -168,19 +355,118 @@ canvas {
 
   .sticky-actions {
     bottom: calc(4.75rem + env(safe-area-inset-bottom));
-    @apply sticky z-10 -mx-3 border-t border-white/10 bg-graphite/95 p-3 backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0;
+    background: color-mix(in srgb, var(--panel-muted) 95%, transparent);
+    border-color: var(--border);
+    @apply sticky z-10 -mx-3 border-t p-3 backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0;
   }
 
   .reader-screen {
-    @apply min-h-dvh bg-ink text-paper;
+    background: var(--bg);
+    color: var(--text);
+    @apply min-h-dvh;
   }
 
   .reader-toolbar {
     padding-top: max(0.75rem, env(safe-area-inset-top));
-    @apply sticky top-0 z-20 flex min-h-16 items-center gap-3 border-b border-white/10 bg-ink/95 px-4 pb-3 backdrop-blur lg:top-0;
+    background: var(--nav-bg);
+    border-color: var(--border);
+    @apply sticky top-0 z-20 flex min-h-16 items-center gap-3 border-b px-4 pb-3 backdrop-blur lg:top-0;
   }
 
   .reader-paragraph {
-    @apply border-l-2 bg-white/[0.025] py-4 pl-4 pr-2;
+    background: color-mix(in srgb, var(--panel) 58%, transparent);
+    @apply border-l-2 py-4 pl-4 pr-2;
   }
+}
+
+:root[data-theme="light"] .border-white\/10,
+:root[data-theme="light"] .border-white\/15 {
+  border-color: var(--border);
+}
+
+:root[data-theme="light"] .border-signal\/50 {
+  border-color: color-mix(in srgb, var(--accent) 58%, transparent);
+}
+
+:root[data-theme="light"] .bg-black\/20,
+:root[data-theme="light"] .bg-black\/25,
+:root[data-theme="light"] .bg-black\/30 {
+  background-color: var(--panel-muted);
+}
+
+:root[data-theme="light"] .bg-white\/5,
+:root[data-theme="light"] .bg-white\/10,
+:root[data-theme="light"] .bg-white\/\[0\.025\],
+:root[data-theme="light"] .bg-white\/\[0\.045\] {
+  background-color: var(--panel);
+}
+
+:root[data-theme="light"] .bg-signal\/10 {
+  background-color: color-mix(in srgb, var(--accent) 13%, transparent);
+}
+
+:root[data-theme="light"] .bg-ember\/10,
+:root[data-theme="light"] .bg-ember\/15,
+:root[data-theme="light"] .bg-ember\/20 {
+  background-color: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+:root[data-theme="light"] .bg-ledger\/10 {
+  background-color: color-mix(in srgb, var(--success) 12%, transparent);
+}
+
+:root[data-theme="light"] .text-paper,
+:root[data-theme="light"] .text-white {
+  color: var(--text);
+}
+
+:root[data-theme="light"] .text-paper\/90,
+:root[data-theme="light"] .text-paper\/80,
+:root[data-theme="light"] .text-paper\/75,
+:root[data-theme="light"] .text-paper\/70,
+:root[data-theme="light"] .text-white\/80,
+:root[data-theme="light"] .text-white\/70 {
+  color: var(--text-muted);
+}
+
+:root[data-theme="light"] .text-paper\/65,
+:root[data-theme="light"] .text-paper\/60,
+:root[data-theme="light"] .text-paper\/55,
+:root[data-theme="light"] .text-paper\/50,
+:root[data-theme="light"] .text-white\/60,
+:root[data-theme="light"] .text-white\/50 {
+  color: var(--text-muted);
+}
+
+:root[data-theme="light"] .text-paper\/45,
+:root[data-theme="light"] .text-paper\/40,
+:root[data-theme="light"] .text-paper\/35,
+:root[data-theme="light"] .text-white\/40,
+:root[data-theme="light"] .text-white\/30 {
+  color: var(--text-soft);
+}
+
+:root[data-theme="light"] .text-signal {
+  color: var(--accent-strong);
+}
+
+:root[data-theme="light"] .text-ledger {
+  color: var(--success);
+}
+
+:root[data-theme="light"] .text-ember {
+  color: var(--danger);
+}
+
+:root[data-theme="light"] .hover\:text-ink:hover {
+  color: #1d1d1b;
+}
+
+:root[data-theme="light"] .hover\:bg-signal:hover {
+  background-color: var(--accent);
+}
+
+:root[data-theme="light"] .shadow-black\/40 {
+  --tw-shadow-color: rgba(29, 29, 27, 0.18);
+  --tw-shadow: var(--tw-shadow-colored);
 }

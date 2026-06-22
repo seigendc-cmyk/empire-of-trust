@@ -152,6 +152,7 @@ export default function StudioHome() {
               <Link className="btn justify-start" to="/studio/production/handoff">Create handoff</Link>
               <Link className="btn justify-start" to="/studio/production/readiness">Check readiness</Link>
               <Link className="btn justify-start" to="/studio/books">Book library</Link>
+              <Link className="btn justify-start" to="/studio/staff">Staff access</Link>
             </div>
           </section>
         </aside>

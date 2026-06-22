@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { PageHeader } from "../components/PageHeader";
+import { MediaReferencePanel } from "../components/MediaReferencePanel";
 import { ErrorState, LoadingState } from "../components/States";
 import { logActivity } from "../lib/offlineDb";
 import {
@@ -115,6 +116,7 @@ export default function UniverseDetail({ kind }: { kind: Kind }) {
           <Link className="btn btn-primary mt-4 w-full sm:w-fit" to={`/mall/search?query=${encodeURIComponent(entity.name)}`}>Search mall</Link>
         </section>
       )}
+      {"sector" in entity && <MediaReferencePanel entityType="business" entityId={entity.id} title="Logo, banner, marketing assets, and references" />}
 
       <section className="panel p-4">
         <h2 className="text-xl font-black">Relationships</h2>

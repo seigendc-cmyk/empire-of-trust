@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { PageHeader } from "../components/PageHeader";
 import { LoadingState } from "../components/States";
 import { getProductionDashboard, searchProduction, summarizeProductionRecord, type ProductionKind, type ProductionRecord } from "../lib/productionRepository";
+import { getSceneDashboard } from "../lib/sceneRepository";
 
 const sections: Array<{ to: string; label: string; kind: ProductionKind }> = [
   { to: "/studio/production/actors", label: "Actors", kind: "actors" },
@@ -24,6 +25,7 @@ interface DashboardData {
   locationsRequired: number;
   productionProgress: number;
   continuityWarnings: ProductionRecord[];
+  scenePlanning?: Awaited<ReturnType<typeof getSceneDashboard>>;
 }
 
 export default function ProductionDashboard() {
@@ -32,7 +34,7 @@ export default function ProductionDashboard() {
   const [results, setResults] = useState<Array<{ kind: ProductionKind; row: ProductionRecord }>>([]);
 
   useEffect(() => {
-    getProductionDashboard().then(setData);
+    Promise.all([getProductionDashboard(), getSceneDashboard()]).then(([production, scenePlanning]) => setData({ ...production, scenePlanning }));
   }, []);
 
   useEffect(() => {
@@ -54,6 +56,15 @@ export default function ProductionDashboard() {
         <div className="panel p-4"><p className="text-xs font-bold uppercase tracking-[0.16em] text-signal">Locations required</p><p className="mt-2 text-3xl font-black">{data.locationsRequired}</p></div>
         <div className="panel p-4"><p className="text-xs font-bold uppercase tracking-[0.16em] text-signal">Progress</p><p className="mt-2 text-3xl font-black">{data.productionProgress}%</p></div>
       </section>
+      {data.scenePlanning && (
+        <section className="grid gap-3 md:grid-cols-5">
+          <Link className="panel p-4 hover:bg-white/5" to="/studio/scenes"><p className="text-2xl font-black text-signal">{data.scenePlanning.scenes.length}</p><p className="mt-1 text-sm font-bold">Scene plans</p></Link>
+          <Link className="panel p-4 hover:bg-white/5" to="/studio/scenes"><p className="text-2xl font-black text-ember">{data.scenePlanning.missingCast.length}</p><p className="mt-1 text-sm font-bold">Missing cast</p></Link>
+          <Link className="panel p-4 hover:bg-white/5" to="/studio/scenes"><p className="text-2xl font-black text-ember">{data.scenePlanning.missingLocation.length}</p><p className="mt-1 text-sm font-bold">Missing location</p></Link>
+          <Link className="panel p-4 hover:bg-white/5" to="/studio/scenes"><p className="text-2xl font-black text-ember">{data.scenePlanning.continuityWarnings.length}</p><p className="mt-1 text-sm font-bold">Scene warnings</p></Link>
+          <Link className="panel p-4 hover:bg-white/5" to="/studio/scenes"><p className="text-2xl font-black text-signal">{data.scenePlanning.upcoming.length}</p><p className="mt-1 text-sm font-bold">Upcoming scenes</p></Link>
+        </section>
+      )}
       <input className="field" placeholder="Search actor, character, scene, location, vehicle, property" value={search} onChange={(event) => setSearch(event.currentTarget.value)} />
       {results.length > 0 && (
         <section className="panel divide-y divide-white/10">

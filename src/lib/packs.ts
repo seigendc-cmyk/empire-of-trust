@@ -65,8 +65,14 @@ export async function buildEpisodePack(episode: Episode, chapters: Chapter[], pa
       previousEpisodeId: episode.previousEpisodeId || "",
       nextEpisodeId: episode.nextEpisodeId || "",
       activeCharacters: episode.activeCharacters || "",
+      activeCharacterIds: episode.activeCharacterIds || [],
+      activeProperties: episode.activeProperties || [],
+      activeVehicles: episode.activeVehicles || [],
       businessContinuityNotes: episode.businessContinuityNotes || "",
       culturalContinuityNotes: episode.culturalContinuityNotes || "",
+      propertyContinuityNotes: episode.propertyContinuityNotes || "",
+      locationContinuityNotes: episode.locationContinuityNotes || "",
+      vehicleContinuityNotes: episode.vehicleContinuityNotes || "",
       chapters: chapters
         .slice()
         .sort((a, b) => a.chapterNumber - b.chapterNumber)
@@ -78,6 +84,10 @@ export async function buildEpisodePack(episode: Episode, chapters: Chapter[], pa
           previousEpisodeBridge: chapter.previousEpisodeBridge,
           emotionalTone: chapter.emotionalTone,
           sceneLocation: chapter.sceneLocation,
+          scenePropertyId: chapter.scenePropertyId || "",
+          sceneLocationText: chapter.sceneLocationText || "",
+          sceneVehicleIds: chapter.sceneVehicleIds || [],
+          featuredCharacterIds: chapter.featuredCharacterIds || [],
           paragraphs: paragraphs
             .filter((paragraph) => paragraph.chapterId === chapter.id)
             .sort((a, b) => a.paragraphNumber - b.paragraphNumber)
@@ -93,6 +103,11 @@ export async function buildEpisodePack(episode: Episode, chapters: Chapter[], pa
               culturalDetail: paragraph.culturalDetail,
               businessContinuityNote: paragraph.businessContinuityNote,
               interactiveLinks: parseJsonList(paragraph.interactiveLinksJson),
+              mentionedCharacterIds: paragraph.mentionedCharacterIds || [],
+              mentionedProperties: paragraph.mentionedProperties || [],
+              propertyInteractionPrompt: paragraph.propertyInteractionPrompt || "",
+              mentionedVehicles: paragraph.mentionedVehicles || [],
+              vehicleInteractionPrompt: paragraph.vehicleInteractionPrompt || "",
             })),
         })),
     },

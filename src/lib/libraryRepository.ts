@@ -1,0 +1,431 @@
+import {
+  addDoc,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  orderBy,
+  query,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  where,
+} from "firebase/firestore";
+import { db, isFirebaseConfigured } from "./firebase";
+import { compareEpisodePackVersions, getOrCreateReaderIdentity, logActivity, readerDb, type LibraryReadingProgress } from "./offlineDb";
+import type { LibraryBooklet, LibraryBookletPack, LibraryCatalogueEntry, LibraryCategory, LibraryChapter, LibrarySection } from "../types";
+
+const LOCAL_BOOKLETS_KEY = "eot.localStudio.libraryBooklets";
+const LOCAL_CHAPTERS_KEY = "eot.localStudio.libraryChapters";
+const LOCAL_SECTIONS_KEY = "eot.localStudio.librarySections";
+const LOCAL_PACKS_KEY = "eot.localStudio.libraryPacks";
+
+export const DEFAULT_LIBRARY_CATEGORIES = [
+  "Business",
+  "Inspiration",
+  "Faith",
+  "Children",
+  "Education",
+  "Community",
+  "Short Stories",
+  "Guides",
+  "Promotions",
+  "General",
+];
+
+type BookletInput = Omit<LibraryBooklet, "id" | "createdAt" | "updatedAt" | "isPartOfEotStory"> & { id?: string };
+type ChapterInput = Omit<LibraryChapter, "id" | "createdAt" | "updatedAt"> & { id?: string };
+type SectionInput = Omit<LibrarySection, "id" | "createdAt" | "updatedAt"> & { id?: string };
+
+const now = () => new Date().toISOString();
+const localId = (prefix: string) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+function withId<T>(snapshot: { id: string; data: () => unknown }) {
+  return { id: snapshot.id, ...(snapshot.data() as object) } as T;
+}
+
+function read<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function write<T>(key: string, value: T) {
+  localStorage.setItem(key, JSON.stringify(value));
+}
+
+function normalizeCode(value: string) {
+  return value.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+function parseJsonArray(value: string) {
+  if (!value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+async function sha256(value: string) {
+  if (!crypto.subtle) return "frontend-placeholder-checksum";
+  const bytes = new TextEncoder().encode(value);
+  const hash = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(hash)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export function bookletInputFromForm(formData: FormData): BookletInput {
+  const title = String(formData.get("title") ?? "").trim();
+  const bookletCode = normalizeCode(String(formData.get("bookletCode") ?? "") || title || "LIB-BOOKLET");
+  return {
+    id: String(formData.get("id") ?? "").trim() || undefined,
+    bookletCode,
+    title,
+    subtitle: String(formData.get("subtitle") ?? "").trim(),
+    author: String(formData.get("author") ?? "Empire of Trust Studio").trim(),
+    category: String(formData.get("category") ?? "General").trim() || "General",
+    description: String(formData.get("description") ?? "").trim(),
+    coverImageUrl: String(formData.get("coverImageUrl") ?? "").trim(),
+    language: String(formData.get("language") ?? "en").trim() || "en",
+    ageRating: String(formData.get("ageRating") ?? "General").trim() || "General",
+    status: String(formData.get("status") ?? "draft") as LibraryBooklet["status"],
+    requiredLicencePlan: String(formData.get("requiredLicencePlan") ?? "free").trim() || "free",
+  };
+}
+
+export function chapterInputFromForm(formData: FormData, bookletId: string): ChapterInput {
+  return {
+    id: String(formData.get("chapterId") ?? "").trim() || undefined,
+    bookletId,
+    chapterNumber: Number(formData.get("chapterNumber") ?? 1) || 1,
+    title: String(formData.get("chapterTitle") ?? "").trim(),
+    intro: String(formData.get("chapterIntro") ?? "").trim(),
+  };
+}
+
+export function sectionInputFromForm(formData: FormData, bookletId: string): SectionInput {
+  return {
+    id: String(formData.get("sectionId") ?? "").trim() || undefined,
+    bookletId,
+    chapterId: String(formData.get("sectionChapterId") ?? "").trim(),
+    sectionNumber: Number(formData.get("sectionNumber") ?? 1) || 1,
+    heading: String(formData.get("sectionHeading") ?? "").trim(),
+    body: String(formData.get("sectionBody") ?? "").trim(),
+    imagePrompt: String(formData.get("imagePrompt") ?? "").trim(),
+    imageUrl: String(formData.get("imageUrl") ?? "").trim(),
+    interactiveLinksJson: String(formData.get("interactiveLinksJson") ?? "[]").trim() || "[]",
+  };
+}
+
+export function validateBookletInput(input: BookletInput) {
+  const errors: string[] = [];
+  if (!input.bookletCode) errors.push("Booklet code is required.");
+  if (!input.title) errors.push("Title is required.");
+  if (!input.author) errors.push("Author is required.");
+  if (!input.category) errors.push("Category is required.");
+  return errors;
+}
+
+export async function listLibraryBooklets() {
+  if (!isFirebaseConfigured) return read<LibraryBooklet[]>(LOCAL_BOOKLETS_KEY, []).sort((a, b) => a.title.localeCompare(b.title));
+  const snapshots = await getDocs(query(collection(db, "eotLibraryBooklets"), orderBy("title")));
+  return snapshots.docs.map((snapshot) => withId<LibraryBooklet>(snapshot));
+}
+
+export async function getLibraryBooklet(bookletId: string) {
+  if (!isFirebaseConfigured) return read<LibraryBooklet[]>(LOCAL_BOOKLETS_KEY, []).find((booklet) => booklet.id === bookletId) ?? null;
+  const snapshot = await getDoc(doc(db, "eotLibraryBooklets", bookletId));
+  return snapshot.exists() ? withId<LibraryBooklet>(snapshot) : null;
+}
+
+export async function upsertLibraryBooklet(input: BookletInput) {
+  if (!isFirebaseConfigured) {
+    const booklets = read<LibraryBooklet[]>(LOCAL_BOOKLETS_KEY, []);
+    const id = input.id || input.bookletCode || localId("library");
+    const existing = booklets.find((booklet) => booklet.id === id);
+    const booklet: LibraryBooklet = { ...input, id, isPartOfEotStory: false, createdAt: existing?.createdAt ?? now(), updatedAt: now() };
+    write(LOCAL_BOOKLETS_KEY, [...booklets.filter((item) => item.id !== id), booklet]);
+    return id;
+  }
+  if (input.id) {
+    const { id, ...rest } = input;
+    await updateDoc(doc(db, "eotLibraryBooklets", id), { ...rest, isPartOfEotStory: false, updatedAt: serverTimestamp() });
+    return id;
+  }
+  const snapshot = await addDoc(collection(db, "eotLibraryBooklets"), {
+    ...input,
+    isPartOfEotStory: false,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  return snapshot.id;
+}
+
+export async function listLibraryChapters(bookletId: string) {
+  if (!isFirebaseConfigured) {
+    return read<LibraryChapter[]>(LOCAL_CHAPTERS_KEY, []).filter((chapter) => chapter.bookletId === bookletId).sort((a, b) => a.chapterNumber - b.chapterNumber);
+  }
+  const snapshots = await getDocs(query(collection(db, "eotLibraryChapters"), where("bookletId", "==", bookletId), orderBy("chapterNumber")));
+  return snapshots.docs.map((snapshot) => withId<LibraryChapter>(snapshot));
+}
+
+export async function upsertLibraryChapter(input: ChapterInput) {
+  if (!input.title) throw new Error("Chapter title is required.");
+  if (!isFirebaseConfigured) {
+    const chapters = read<LibraryChapter[]>(LOCAL_CHAPTERS_KEY, []);
+    const id = input.id || localId("library_chapter");
+    const existing = chapters.find((chapter) => chapter.id === id);
+    const chapter: LibraryChapter = { ...input, id, createdAt: existing?.createdAt ?? now(), updatedAt: now() };
+    write(LOCAL_CHAPTERS_KEY, [...chapters.filter((item) => item.id !== id), chapter]);
+    return id;
+  }
+  if (input.id) {
+    const { id, ...rest } = input;
+    await updateDoc(doc(db, "eotLibraryChapters", id), { ...rest, updatedAt: serverTimestamp() });
+    return id;
+  }
+  const snapshot = await addDoc(collection(db, "eotLibraryChapters"), { ...input, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+  return snapshot.id;
+}
+
+export async function listLibrarySections(bookletId: string) {
+  if (!isFirebaseConfigured) {
+    return read<LibrarySection[]>(LOCAL_SECTIONS_KEY, []).filter((section) => section.bookletId === bookletId).sort((a, b) => a.sectionNumber - b.sectionNumber);
+  }
+  const snapshots = await getDocs(query(collection(db, "eotLibrarySections"), where("bookletId", "==", bookletId), orderBy("sectionNumber")));
+  return snapshots.docs.map((snapshot) => withId<LibrarySection>(snapshot));
+}
+
+export async function upsertLibrarySection(input: SectionInput) {
+  if (!input.chapterId) throw new Error("Choose a chapter for this section.");
+  if (!input.heading && !input.body) throw new Error("Section heading or body is required.");
+  if (!isFirebaseConfigured) {
+    const sections = read<LibrarySection[]>(LOCAL_SECTIONS_KEY, []);
+    const id = input.id || localId("library_section");
+    const existing = sections.find((section) => section.id === id);
+    const section: LibrarySection = { ...input, id, createdAt: existing?.createdAt ?? now(), updatedAt: now() };
+    write(LOCAL_SECTIONS_KEY, [...sections.filter((item) => item.id !== id), section]);
+    return id;
+  }
+  if (input.id) {
+    const { id, ...rest } = input;
+    await updateDoc(doc(db, "eotLibrarySections", id), { ...rest, updatedAt: serverTimestamp() });
+    return id;
+  }
+  const snapshot = await addDoc(collection(db, "eotLibrarySections"), { ...input, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+  return snapshot.id;
+}
+
+export async function getLibraryContent(bookletId: string) {
+  const [booklet, chapters, sections] = await Promise.all([getLibraryBooklet(bookletId), listLibraryChapters(bookletId), listLibrarySections(bookletId)]);
+  return { booklet, chapters, sections };
+}
+
+export async function listLibraryCategories(): Promise<LibraryCategory[]> {
+  const defaults = DEFAULT_LIBRARY_CATEGORIES.map((name, index) => ({ id: normalizeCode(name).toLowerCase(), name, description: `${name} independent booklet category.`, sortOrder: index }));
+  if (!isFirebaseConfigured) return defaults;
+  try {
+    const snapshots = await getDocs(query(collection(db, "eotLibraryCategories"), orderBy("sortOrder")));
+    const rows = snapshots.docs.map((snapshot) => withId<LibraryCategory>(snapshot));
+    return rows.length ? rows : defaults;
+  } catch {
+    return defaults;
+  }
+}
+
+export async function listLibraryCatalogue() {
+  if (!isFirebaseConfigured) return readerDb.libraryCatalogueCache.toArray();
+  try {
+    const rows = (await getDocs(query(collection(db, "eotLibraryBooklets"), where("status", "==", "published"), orderBy("title")))).docs.map((snapshot) => {
+      const booklet = withId<LibraryBooklet>(snapshot);
+      return catalogueEntryFromBooklet(booklet);
+    });
+    await readerDb.libraryCatalogueCache.bulkPut(rows);
+    return rows;
+  } catch {
+    return readerDb.libraryCatalogueCache.toArray();
+  }
+}
+
+export function catalogueEntryFromBooklet(booklet: LibraryBooklet): LibraryCatalogueEntry {
+  return {
+    id: booklet.id,
+    bookletId: booklet.id,
+    bookletCode: booklet.bookletCode,
+    title: booklet.title,
+    subtitle: booklet.subtitle,
+    author: booklet.author,
+    category: booklet.category,
+    description: booklet.description,
+    coverImageUrl: booklet.coverImageUrl,
+    language: booklet.language,
+    ageRating: booklet.ageRating,
+    requiredLicencePlan: booklet.requiredLicencePlan,
+    isPartOfEotStory: false,
+    status: booklet.status === "archived" ? "archived" : "published",
+    updatedAt: now(),
+  };
+}
+
+export async function publishLibraryBooklet(booklet: LibraryBooklet) {
+  const entry = catalogueEntryFromBooklet({ ...booklet, status: "published" });
+  if (!isFirebaseConfigured) {
+    const booklets = read<LibraryBooklet[]>(LOCAL_BOOKLETS_KEY, []);
+    write(LOCAL_BOOKLETS_KEY, booklets.map((item) => item.id === booklet.id ? { ...item, status: "published", updatedAt: now() } : item));
+    await readerDb.libraryCatalogueCache.put(entry);
+    return entry.id;
+  }
+  await setDoc(doc(db, "eotLibraryBooklets", booklet.id), { status: "published", updatedAt: serverTimestamp() }, { merge: true });
+  await setDoc(doc(db, "eotLibraryCategories", normalizeCode(booklet.category).toLowerCase()), { name: booklet.category, sortOrder: DEFAULT_LIBRARY_CATEGORIES.indexOf(booklet.category), updatedAt: serverTimestamp() }, { merge: true });
+  await setDoc(doc(db, "eotLibraryPacks", `catalogue_${booklet.id}`), { ...entry, updatedAt: serverTimestamp() }, { merge: true });
+  await readerDb.libraryCatalogueCache.put(entry);
+  return entry.id;
+}
+
+export async function buildLibraryBookletPack(booklet: LibraryBooklet, chapters: LibraryChapter[], sections: LibrarySection[], version = "1.0.0"): Promise<LibraryBookletPack> {
+  const content: LibraryBookletPack["content"] = {
+    booklet: {
+      id: booklet.id,
+      title: booklet.title,
+      subtitle: booklet.subtitle,
+      author: booklet.author,
+      category: booklet.category,
+      description: booklet.description,
+      coverImageUrl: booklet.coverImageUrl,
+      language: booklet.language,
+      ageRating: booklet.ageRating,
+      requiredLicencePlan: booklet.requiredLicencePlan,
+      isPartOfEotStory: false,
+      chapters: chapters.slice().sort((a, b) => a.chapterNumber - b.chapterNumber).map((chapter) => ({
+        id: chapter.id,
+        chapterNumber: chapter.chapterNumber,
+        title: chapter.title,
+        intro: chapter.intro,
+        sections: sections.filter((section) => section.chapterId === chapter.id).sort((a, b) => a.sectionNumber - b.sectionNumber).map((section) => ({
+          id: section.id,
+          sectionNumber: section.sectionNumber,
+          heading: section.heading,
+          body: section.body,
+          imagePrompt: section.imagePrompt,
+          imageUrl: section.imageUrl,
+          interactiveLinks: parseJsonArray(section.interactiveLinksJson),
+        })),
+      })),
+    },
+  };
+  const checksum = await sha256(JSON.stringify(content));
+  return {
+    manifest: {
+      packId: `LIB-${booklet.bookletCode}`,
+      packType: "library_booklet",
+      version,
+      bookletCode: booklet.bookletCode,
+      title: booklet.title,
+      author: booklet.author,
+      category: booklet.category,
+      createdAt: now(),
+      requiredLicencePlan: booklet.requiredLicencePlan,
+      isPartOfEotStory: false,
+      checksumAlgorithm: "SHA-256",
+      checksum,
+      signature: "frontend-placeholder-signature",
+    },
+    content,
+  };
+}
+
+export async function saveLibraryPackMetadata(pack: LibraryBookletPack) {
+  const key = `${pack.manifest.packId}_${pack.manifest.version}`;
+  const row = { id: key, ...pack.manifest, bookletId: pack.content.booklet.id, updatedAt: now() };
+  if (!isFirebaseConfigured) {
+    const rows = read<Array<Record<string, unknown>>>(LOCAL_PACKS_KEY, []);
+    write(LOCAL_PACKS_KEY, [...rows.filter((item) => item.id !== key), row]);
+    return key;
+  }
+  await setDoc(doc(db, "eotLibraryPacks", key), { ...row, updatedAt: serverTimestamp() }, { merge: true });
+  return key;
+}
+
+export function downloadLibraryPack(pack: LibraryBookletPack) {
+  const blob = new Blob([JSON.stringify(pack, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `${pack.manifest.packId}-v${pack.manifest.version}.json`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+export function validateLibraryPack(input: unknown): LibraryBookletPack {
+  if (!input || typeof input !== "object") throw new Error("Pack file is not a JSON object.");
+  const pack = input as Partial<LibraryBookletPack>;
+  if (!pack.manifest || !pack.content?.booklet) throw new Error("Pack is missing manifest or booklet content.");
+  if (pack.manifest.packType !== "library_booklet") throw new Error("Only independent library booklet packs can be imported here.");
+  if (pack.manifest.isPartOfEotStory !== false || pack.content.booklet.isPartOfEotStory !== false) throw new Error("Library booklet packs must be marked as not part of the EOT story.");
+  if (!pack.manifest.packId || !pack.manifest.version || !pack.content.booklet.id || !pack.content.booklet.title) throw new Error("Pack is missing required identifiers.");
+  return pack as LibraryBookletPack;
+}
+
+export async function getImportedLibraryPack(bookletId: string) {
+  return readerDb.libraryPacks.get(bookletId);
+}
+
+export async function listImportedLibraryPacks() {
+  return readerDb.libraryPacks.toArray();
+}
+
+export async function importLibraryPack(pack: LibraryBookletPack, options: { replace?: boolean } = {}) {
+  const reader = await getOrCreateReaderIdentity();
+  const existing = await readerDb.libraryPacks.get(pack.content.booklet.id);
+  if (existing && !options.replace && compareEpisodePackVersions(pack.manifest.version, existing.manifest.version) <= 0) {
+    throw new Error(`Version ${existing.manifest.version} is already imported. Import a newer booklet pack or choose replace.`);
+  }
+  await readerDb.libraryPacks.put(pack);
+  await readerDb.libraryCatalogueCache.put({
+    id: pack.content.booklet.id,
+    bookletId: pack.content.booklet.id,
+    bookletCode: pack.manifest.bookletCode,
+    title: pack.manifest.title,
+    subtitle: pack.content.booklet.subtitle,
+    author: pack.manifest.author,
+    category: pack.manifest.category,
+    description: pack.content.booklet.description,
+    coverImageUrl: pack.content.booklet.coverImageUrl,
+    language: pack.content.booklet.language,
+    ageRating: pack.content.booklet.ageRating,
+    requiredLicencePlan: pack.manifest.requiredLicencePlan,
+    isPartOfEotStory: false,
+    status: "published",
+    updatedAt: now(),
+  });
+  await logActivity("library_pack_imported", {
+    targetType: "libraryPack",
+    targetId: pack.manifest.packId,
+    metadata: { version: pack.manifest.version, bookletId: pack.content.booklet.id, replaced: Boolean(existing) },
+  }, reader);
+  return pack.content.booklet.id;
+}
+
+export async function deleteImportedLibraryPack(bookletId: string) {
+  await readerDb.transaction("rw", readerDb.libraryPacks, readerDb.libraryReadingProgress, async () => {
+    await readerDb.libraryPacks.delete(bookletId);
+    await readerDb.libraryReadingProgress.delete(bookletId);
+  });
+}
+
+export async function getLibraryReadingProgress(bookletId: string) {
+  return readerDb.libraryReadingProgress.get(bookletId);
+}
+
+export async function saveLibraryReadingProgress(progress: LibraryReadingProgress) {
+  await readerDb.libraryReadingProgress.put(progress);
+  await logActivity("library_reading_progress_saved", {
+    targetType: "libraryBooklet",
+    targetId: progress.bookletId,
+    metadata: { chapterId: progress.chapterId, sectionId: progress.sectionId },
+  });
+}

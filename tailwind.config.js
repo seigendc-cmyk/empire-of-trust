@@ -4,13 +4,13 @@ export default {
   theme: {
     extend: {
       colors: {
-        ink: "#111111",
-        graphite: "#202124",
-        steel: "#3d464f",
-        paper: "#f5f2ea",
-        signal: "#b8924b",
-        ember: "#8e3b2f",
-        ledger: "#2f6f63"
+        ink: "rgb(var(--color-bg) / <alpha-value>)",
+        graphite: "rgb(var(--color-panel-muted) / <alpha-value>)",
+        steel: "rgb(var(--color-border) / <alpha-value>)",
+        paper: "rgb(var(--color-text) / <alpha-value>)",
+        signal: "rgb(var(--color-accent) / <alpha-value>)",
+        ember: "rgb(var(--color-danger) / <alpha-value>)",
+        ledger: "rgb(var(--color-success) / <alpha-value>)"
       },
       fontFamily: {
         sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],

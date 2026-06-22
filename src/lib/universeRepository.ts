@@ -1,6 +1,9 @@
 import { collection, doc, getDoc, getDocs, orderBy, query } from "firebase/firestore";
 import { db } from "./firebase";
+import { listActors as listTalentActors } from "./actorRepository";
 import { readerDb } from "./offlineDb";
+import { listProperties as listRegisteredProperties } from "./propertyRepository";
+import { listVehicles as listFleetVehicles } from "./vehicleRepository";
 import type { EotActor, EotAsset, EotBusiness, EotCharacter, EotProperty, EotRelationship, EotVehicle } from "../types";
 
 type CollectionName = "eotCharacters" | "eotActors" | "eotAssets" | "eotBusinesses" | "eotProperties" | "eotVehicles" | "eotRelationships";
@@ -75,7 +78,7 @@ export async function listCharacters() {
 }
 
 export async function listActors() {
-  return listUniverse<EotActor>("actors");
+  return listTalentActors();
 }
 
 export async function listAssets() {
@@ -87,11 +90,11 @@ export async function listBusinesses() {
 }
 
 export async function listProperties() {
-  return listUniverse<EotProperty>("properties");
+  return listRegisteredProperties();
 }
 
 export async function listVehicles() {
-  return listUniverse<EotVehicle>("vehicles");
+  return listFleetVehicles();
 }
 
 export async function listRelationships() {

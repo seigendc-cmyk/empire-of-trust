@@ -4,6 +4,8 @@ import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import type { Auth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import type { Firestore } from "firebase/firestore";
+import { getStorage } from "firebase/storage";
+import type { FirebaseStorage } from "firebase/storage";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -12,6 +14,7 @@ const firebaseConfig = {
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
 
 const requiredConfig = [
@@ -32,6 +35,7 @@ const missingConfigError = missingKeys.length > 0 ? `Missing Firebase environmen
 let activeApp: FirebaseApp | undefined;
 let activeAuth: Auth | undefined;
 let activeDb: Firestore | undefined;
+let activeStorage: FirebaseStorage | undefined;
 let initError = "";
 
 if (!missingConfigError) {
@@ -39,10 +43,12 @@ if (!missingConfigError) {
     activeApp = initializeApp(firebaseConfig);
     activeAuth = getAuth(activeApp);
     activeDb = getFirestore(activeApp);
+    activeStorage = getStorage(activeApp);
   } catch (error) {
     activeApp = undefined;
     activeAuth = undefined;
     activeDb = undefined;
+    activeStorage = undefined;
     initError = error instanceof Error ? error.message : "Firebase could not initialize.";
   }
 }
@@ -53,3 +59,4 @@ export const app = activeApp as FirebaseApp;
 export const auth = activeAuth as Auth;
 export const googleProvider = new GoogleAuthProvider();
 export const db = activeDb as Firestore;
+export const storage = activeStorage as FirebaseStorage;

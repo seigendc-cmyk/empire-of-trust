@@ -5,17 +5,36 @@ import type {
   AgentActivationRequest,
   DeviceIdentity,
   EotActor,
+  EotActorAudition,
+  EotActorAvailability,
+  EotActorEpisodeAppearance,
+  EotActorPortfolio,
+  EotActorSceneAssignment,
   EotAsset,
+  EotAssetFolder,
+  EotAssetPrompt,
+  EotAssetUsage,
+  EotAssetVersion,
   EotBusiness,
   EotCatalogueEntry,
   EotCharacter,
+  EotCharacterAppearance,
+  EotCharacterTimelineEvent,
   EotContentRule,
+  EotCommerceInterestLog,
+  EotCommerceLink,
   EotLeaderboardEntry,
   EotPoll,
   EotProduct,
   EotProductCategory,
   EotPrediction,
   EotProperty,
+  EotPropertyAppearance,
+  EotPropertyAssetRecord,
+  EotPropertyOwnership,
+  EotPropertyRelationship,
+  EotPropertyTenant,
+  EotPropertyValuation,
   EotQuiz,
   EotPublishedPack,
   EotReleaseSchedule,
@@ -24,6 +43,11 @@ import type {
   EotVendorBranch,
   EotVendorContact,
   EotVehicle,
+  EotVehicleAppearance,
+  EotVehicleMaintenance,
+  EotVehicleOwnership,
+  EotVehicleRelationship,
+  EotVehicleUsage,
   LicenceActivityLog,
   LocalLicence,
   EotCasting,
@@ -34,19 +58,37 @@ import type {
   EotProductionSchedule,
   EotProductionVehicle,
   EotScene,
+  EotSceneAsset,
+  EotSceneBreakdown,
+  EotSceneCast,
+  EotSceneContinuity,
+  EotSceneProp,
+  EotSceneSchedule,
+  EotSceneShot,
+  EotSceneWardrobe,
   EotBusinessTimeline,
+  EotCastingAssignment,
   EotCharacterArc,
   EotConflictMap,
   EotContinuityCheck,
+  EotContinuityCheckRecord,
+  EotContinuityRuleRecord,
+  EotContinuityWarning,
+  EotEntityContinuity,
+  EotEpisodeContinuitySummary,
   EotEpisodePlan,
   EotRelationshipArc,
   EotStoryPrompt,
   EotStoryRule,
   EotStoryTimeline,
+  EotTalentNote,
+  EotTimelineEvent,
   ProductionActor,
   ProductionCharacter,
   ScratchCardAttempt,
   VendorPack,
+  LibraryBookletPack,
+  LibraryCatalogueEntry,
 } from "../types";
 
 export type SyncStatus = "pending" | "synced" | "failed";
@@ -68,7 +110,17 @@ export type ReaderEventType =
   | "quiz_completed"
   | "reward_earned"
   | "badge_earned"
-  | "leaderboard_viewed";
+  | "leaderboard_viewed"
+  | "library_pack_imported"
+  | "library_booklet_opened"
+  | "library_chapter_opened"
+  | "library_booklet_completed"
+  | "library_reading_progress_saved"
+  | "daily_login"
+  | "community_participation"
+  | "invite_accepted"
+  | "content_reviewed"
+  | "story_vote_cast";
 
 export interface ReaderIdentity {
   readerId: string;
@@ -81,10 +133,49 @@ export interface ReaderIdentity {
   syncStatus: SyncStatus;
 }
 
+export type ReaderRank = "Citizen" | "Insider" | "Influencer" | "Advisor" | "Investor" | "Empire Builder" | "Legend";
+
+export interface ReaderProfileRecord {
+  id: string;
+  readerId: string;
+  displayName: string;
+  avatar: string;
+  country: string;
+  city: string;
+  joinedAt: string;
+  lastSeenAt: string;
+  reputationScore: number;
+  participationScore: number;
+  episodeCount: number;
+  bookletCount: number;
+  quizCount: number;
+  rewardPoints: number;
+  badges: string[];
+  currentRank: ReaderRank;
+  syncStatus: SyncStatus;
+}
+
+export interface StoryVote {
+  id: string;
+  episodeId: string;
+  readerId: string;
+  voteType: "business_decision" | "story_direction" | "character_decision" | "investment_option" | string;
+  voteValue: string;
+  createdAt: string;
+  syncStatus: SyncStatus;
+}
+
 export interface ReadingProgress {
   episodeId: string;
   chapterId: string;
   paragraphId: string;
+  updatedAt: string;
+}
+
+export interface LibraryReadingProgress {
+  bookletId: string;
+  chapterId: string;
+  sectionId: string;
   updatedAt: string;
 }
 
@@ -219,7 +310,9 @@ export interface SyncQueueItem {
     | "readerQuizAttempts"
     | "readerPollVotes"
     | "readerPredictions"
-    | "readerRankings";
+    | "readerRankings"
+    | "readerProfiles"
+    | "storyVotes";
   entityId: string;
   operation: "create" | "update" | "delete";
   payload: Record<string, unknown>;
@@ -238,8 +331,12 @@ export interface ReaderSettings {
 
 class EotReaderDb extends Dexie {
   readerIdentity!: Table<ReaderIdentity, string>;
+  readerProfiles!: Table<ReaderProfileRecord, string>;
+  storyVotes!: Table<StoryVote, string>;
   episodePacks!: Table<EpisodePack, string>;
+  libraryPacks!: Table<LibraryBookletPack, string>;
   readingProgress!: Table<ReadingProgress, string>;
+  libraryReadingProgress!: Table<LibraryReadingProgress, string>;
   readerActivityLog!: Table<ReaderActivityLog, string>;
   readerChoices!: Table<ReaderChoice, string>;
   readerQuizAttempts!: Table<ReaderQuizAttempt, string>;
@@ -259,7 +356,35 @@ class EotReaderDb extends Dexie {
   agentActivationRequests!: Table<AgentActivationRequest, string>;
   licenceActivityLog!: Table<LicenceActivityLog, string>;
   characterCache!: Table<EotCharacter, string>;
+  characterAppearanceCache!: Table<EotCharacterAppearance, string>;
+  characterTimelineCache!: Table<EotCharacterTimelineEvent, string>;
+  characterRelationshipCache!: Table<EotRelationship, string>;
   assetCache!: Table<EotActor | EotAsset | EotBusiness | EotProperty | EotVehicle, string>;
+  assetPromptCache!: Table<EotAssetPrompt, string>;
+  assetFolderCache!: Table<EotAssetFolder, string>;
+  assetVersionCache!: Table<EotAssetVersion, string>;
+  assetUsageCache!: Table<EotAssetUsage, string>;
+  actorCache!: Table<EotActor, string>;
+  actorPortfolioCache!: Table<EotActorPortfolio, string>;
+  actorAvailabilityCache!: Table<EotActorAvailability, string>;
+  actorAuditionCache!: Table<EotActorAudition, string>;
+  castingAssignmentCache!: Table<EotCastingAssignment, string>;
+  actorEpisodeAppearanceCache!: Table<EotActorEpisodeAppearance, string>;
+  actorSceneAssignmentCache!: Table<EotActorSceneAssignment, string>;
+  talentNoteCache!: Table<EotTalentNote, string>;
+  propertyCache!: Table<EotProperty, string>;
+  propertyOwnershipCache!: Table<EotPropertyOwnership, string>;
+  propertyTenantCache!: Table<EotPropertyTenant, string>;
+  propertyValuationCache!: Table<EotPropertyValuation, string>;
+  propertyAssetCache!: Table<EotPropertyAssetRecord, string>;
+  propertyAppearanceCache!: Table<EotPropertyAppearance, string>;
+  propertyRelationshipCache!: Table<EotPropertyRelationship, string>;
+  vehicleCache!: Table<EotVehicle, string>;
+  vehicleOwnershipCache!: Table<EotVehicleOwnership, string>;
+  vehicleUsageCache!: Table<EotVehicleUsage, string>;
+  vehicleMaintenanceCache!: Table<EotVehicleMaintenance, string>;
+  vehicleAppearanceCache!: Table<EotVehicleAppearance, string>;
+  vehicleRelationshipCache!: Table<EotVehicleRelationship, string>;
   relationshipCache!: Table<EotRelationship, string>;
   vendorPacks!: Table<VendorPack, string>;
   vendors!: Table<EotVendor, string>;
@@ -267,11 +392,14 @@ class EotReaderDb extends Dexie {
   productCategories!: Table<EotProductCategory, string>;
   vendorBranches!: Table<EotVendorBranch, string>;
   vendorContacts!: Table<EotVendorContact, string>;
+  commerceInterestLog!: Table<EotCommerceInterestLog, string>;
+  commerceLinkCache!: Table<EotCommerceLink, string>;
   quizCache!: Table<EotQuiz, string>;
   pollCache!: Table<EotPoll, string>;
   predictionCache!: Table<EotPrediction, string>;
   leaderboardCache!: Table<EotLeaderboardEntry, string>;
   catalogueCache!: Table<EotCatalogueEntry, string>;
+  libraryCatalogueCache!: Table<LibraryCatalogueEntry, string>;
   publishedPackCache!: Table<EotPublishedPack, string>;
   releaseScheduleCache!: Table<EotReleaseSchedule, string>;
   contentRuleCache!: Table<EotContentRule, string>;
@@ -279,6 +407,14 @@ class EotReaderDb extends Dexie {
   castingCache!: Table<EotCasting, string>;
   productionCharacterCache!: Table<ProductionCharacter, string>;
   sceneCache!: Table<EotScene, string>;
+  sceneBreakdownCache!: Table<EotSceneBreakdown, string>;
+  sceneCastCache!: Table<EotSceneCast, string>;
+  sceneAssetCache!: Table<EotSceneAsset, string>;
+  sceneContinuityCache!: Table<EotSceneContinuity, string>;
+  sceneScheduleCache!: Table<EotSceneSchedule, string>;
+  sceneShotListCache!: Table<EotSceneShot, string>;
+  scenePropCache!: Table<EotSceneProp, string>;
+  sceneWardrobeCache!: Table<EotSceneWardrobe, string>;
   locationCache!: Table<EotLocation, string>;
   productionPropertyCache!: Table<EotProductionProperty, string>;
   productionVehicleCache!: Table<EotProductionVehicle, string>;
@@ -294,6 +430,15 @@ class EotReaderDb extends Dexie {
   episodePlanCache!: Table<EotEpisodePlan, string>;
   storyPromptCache!: Table<EotStoryPrompt, string>;
   storyRuleCache!: Table<EotStoryRule, string>;
+  timelineEventCache!: Table<EotTimelineEvent, string>;
+  continuityRuleCache!: Table<EotContinuityRuleRecord, string>;
+  continuityWarningCache!: Table<EotContinuityWarning, string>;
+  characterContinuityCache!: Table<EotEntityContinuity, string>;
+  businessContinuityCache!: Table<EotEntityContinuity, string>;
+  propertyContinuityCache!: Table<EotEntityContinuity, string>;
+  vehicleContinuityCache!: Table<EotEntityContinuity, string>;
+  relationshipContinuityCache!: Table<EotEntityContinuity, string>;
+  episodeContinuitySummaryCache!: Table<EotEpisodeContinuitySummary, string>;
 
   constructor() {
     super("eot-reader-packs");
@@ -579,6 +724,862 @@ class EotReaderDb extends Dexie {
       storyPromptCache: "id, episodePlanId, promptType, title",
       storyRuleCache: "id, ruleType, status, title",
     });
+    this.version(12).stores({
+      readerIdentity: "readerId, deviceId, syncStatus",
+      episodePacks: "content.episode.id, manifest.title, manifest.packId, manifest.version",
+      libraryPacks: "content.booklet.id, manifest.packId, manifest.bookletCode, manifest.title, manifest.version, manifest.category",
+      readingProgress: "episodeId, chapterId, updatedAt",
+      libraryReadingProgress: "bookletId, chapterId, sectionId, updatedAt",
+      readerActivityLog: "id, readerId, eventType, episodeId, syncStatus, createdAt, targetType, targetId",
+      readerChoices: "id, readerId, episodeId, choiceType, syncStatus, createdAt",
+      readerQuizAttempts: "id, readerId, quizId, episodeId, syncStatus, completedAt",
+      readerPollVotes: "id, readerId, pollId, episodeId, syncStatus, createdAt",
+      readerPredictions: "id, readerId, predictionId, episodeId, syncStatus, createdAt",
+      readerRewards: "id, readerId, rewardType, episodeId, syncStatus, earnedAt",
+      readerBadges: "id, readerId, badgeCode, syncStatus, earnedAt",
+      readerRankings: "id, readerId, period, points, updatedAt, syncStatus",
+      readerDramaParticipation: "id, readerId, participationType, episodeId, syncStatus, createdAt",
+      readerParticipation: "id, readerId, participationType, episodeId, syncStatus, createdAt",
+      syncQueue: "id, readerId, entityType, entityId, syncStatus, createdAt",
+      readerSettings: "id",
+      deviceIdentity: "deviceId, createdAt, lastSeenAt",
+      localLicences: "licenceId, readerId, deviceId, phoneNumber, plan, status, expiresAt, source, syncStatus",
+      activationAttempts: "id, readerId, deviceId, phoneNumber, activationCode, status, createdAt",
+      scratchCardAttempts: "id, readerId, deviceId, phoneNumber, scratchCardCode, status, createdAt",
+      agentActivationRequests: "id, agentCode, phoneNumber, plan, status, createdAt, syncStatus",
+      licenceActivityLog: "id, readerId, deviceId, eventType, licenceId, createdAt, syncStatus",
+      characterCache: "id, name, displayName, role",
+      assetCache: "id, name, type",
+      relationshipCache: "id, type, fromCharacterId, toCharacterId, businessId",
+      vendorPacks: "manifest.packId, manifest.vendorId, manifest.version",
+      vendors: "id, businessName, sector, city, status",
+      products: "id, vendorId, name, category, brand, stockStatus",
+      productCategories: "id, name, sector",
+      vendorBranches: "id, vendorId, city, suburb",
+      vendorContacts: "id, vendorId, label",
+      quizCache: "id, episodeId, status, createdAt",
+      pollCache: "id, episodeId, status, closingDate",
+      predictionCache: "id, episodeId, status, closingDate",
+      leaderboardCache: "id, readerId, period, points, updatedAt",
+      catalogueCache: "id, contentType, episodeId, packId, requiredLicencePlan, visibility, status, releaseDate",
+      libraryCatalogueCache: "id, bookletId, bookletCode, title, category, requiredLicencePlan, status",
+      publishedPackCache: "id, episodeId, packId, packType, requiredLicencePlan, status, releaseDate",
+      releaseScheduleCache: "id, episodeId, packId, releaseDate, status, seasonNumber, episodeNumber",
+      contentRuleCache: "id, contentId, contentType, requiredLicencePlan, visibility",
+      productionActorCache: "id, fullName, stageName, availabilityStatus, status",
+      castingCache: "id, characterId, actorId, status",
+      productionCharacterCache: "id, name, actorId, role, currentStoryStatus",
+      sceneCache: "id, episodeId, chapterId, sceneNumber, locationId, status",
+      locationCache: "id, name, city, locationType, availability",
+      productionPropertyCache: "id, name, type, status",
+      productionVehicleCache: "id, name, registration, type",
+      productionAssetCache: "id, assetType, relatedCharacterId, relatedSceneId, relatedEpisodeId",
+      productionScheduleCache: "id, episodeId, sceneId, scheduledDate, locationId, status",
+      continuityRecordCache: "id, episodeId, sceneId, continuityType, severity, status",
+      storyTimelineCache: "id, storyDate, seasonNumber, episodeNumber, characterInvolved, businessInvolved",
+      characterArcCache: "id, characterId, seasonNumber, episodeId, arcStage",
+      relationshipArcCache: "id, characterA, characterB, relationshipType, currentStatus",
+      businessTimelineCache: "id, company, episodeId, eventType",
+      conflictMapCache: "id, episodeId, conflictType, intensity, status",
+      continuityCheckCache: "id, episodeId, checkType, severity, status",
+      episodePlanCache: "id, seasonNumber, episodeNumber, title, storyDate",
+      storyPromptCache: "id, episodePlanId, promptType, title",
+      storyRuleCache: "id, ruleType, status, title",
+    });
+    this.version(13).stores({
+      readerIdentity: "readerId, deviceId, syncStatus",
+      readerProfiles: "readerId, country, city, currentRank, rewardPoints, lastSeenAt, syncStatus",
+      storyVotes: "id, episodeId, readerId, voteType, createdAt, syncStatus",
+      episodePacks: "content.episode.id, manifest.title, manifest.packId, manifest.version",
+      libraryPacks: "content.booklet.id, manifest.packId, manifest.bookletCode, manifest.title, manifest.version, manifest.category",
+      readingProgress: "episodeId, chapterId, updatedAt",
+      libraryReadingProgress: "bookletId, chapterId, sectionId, updatedAt",
+      readerActivityLog: "id, readerId, eventType, episodeId, syncStatus, createdAt, targetType, targetId",
+      readerChoices: "id, readerId, episodeId, choiceType, syncStatus, createdAt",
+      readerQuizAttempts: "id, readerId, quizId, episodeId, syncStatus, completedAt",
+      readerPollVotes: "id, readerId, pollId, episodeId, syncStatus, createdAt",
+      readerPredictions: "id, readerId, predictionId, episodeId, syncStatus, createdAt",
+      readerRewards: "id, readerId, rewardType, episodeId, syncStatus, earnedAt",
+      readerBadges: "id, readerId, badgeCode, syncStatus, earnedAt",
+      readerRankings: "id, readerId, period, points, updatedAt, syncStatus",
+      readerDramaParticipation: "id, readerId, participationType, episodeId, syncStatus, createdAt",
+      readerParticipation: "id, readerId, participationType, episodeId, syncStatus, createdAt",
+      syncQueue: "id, readerId, entityType, entityId, syncStatus, createdAt",
+      readerSettings: "id",
+      deviceIdentity: "deviceId, createdAt, lastSeenAt",
+      localLicences: "licenceId, readerId, deviceId, phoneNumber, plan, status, expiresAt, source, syncStatus",
+      activationAttempts: "id, readerId, deviceId, phoneNumber, activationCode, status, createdAt",
+      scratchCardAttempts: "id, readerId, deviceId, phoneNumber, scratchCardCode, status, createdAt",
+      agentActivationRequests: "id, agentCode, phoneNumber, plan, status, createdAt, syncStatus",
+      licenceActivityLog: "id, readerId, deviceId, eventType, licenceId, createdAt, syncStatus",
+      characterCache: "id, name, displayName, role",
+      assetCache: "id, name, type",
+      relationshipCache: "id, type, fromCharacterId, toCharacterId, businessId",
+      vendorPacks: "manifest.packId, manifest.vendorId, manifest.version",
+      vendors: "id, businessName, sector, city, status",
+      products: "id, vendorId, name, category, brand, stockStatus",
+      productCategories: "id, name, sector",
+      vendorBranches: "id, vendorId, city, suburb",
+      vendorContacts: "id, vendorId, label",
+      quizCache: "id, episodeId, status, createdAt",
+      pollCache: "id, episodeId, status, createdAt",
+      predictionCache: "id, episodeId, status, closingDate",
+      leaderboardCache: "id, readerId, period, points, updatedAt",
+      catalogueCache: "id, contentType, episodeId, packId, requiredLicencePlan, visibility, status, releaseDate",
+      libraryCatalogueCache: "id, bookletId, bookletCode, title, category, requiredLicencePlan, status",
+      publishedPackCache: "id, episodeId, packId, packType, requiredLicencePlan, status, releaseDate",
+      releaseScheduleCache: "id, episodeId, packId, releaseDate, status, seasonNumber, episodeNumber",
+      contentRuleCache: "id, contentId, contentType, requiredLicencePlan, visibility",
+      productionActorCache: "id, fullName, stageName, availabilityStatus, status",
+      castingCache: "id, characterId, actorId, status",
+      productionCharacterCache: "id, name, actorId, role, currentStoryStatus",
+      sceneCache: "id, episodeId, chapterId, sceneNumber, locationId, status",
+      locationCache: "id, name, city, locationType, availability",
+      productionPropertyCache: "id, name, type, status",
+      productionVehicleCache: "id, name, registration, type",
+      productionAssetCache: "id, assetType, relatedCharacterId, relatedSceneId, relatedEpisodeId",
+      productionScheduleCache: "id, episodeId, sceneId, scheduledDate, locationId, status",
+      continuityRecordCache: "id, episodeId, sceneId, continuityType, severity, status",
+      storyTimelineCache: "id, storyDate, seasonNumber, episodeNumber, characterInvolved, businessInvolved",
+      characterArcCache: "id, characterId, seasonNumber, episodeId, arcStage",
+      relationshipArcCache: "id, characterA, characterB, relationshipType, currentStatus",
+      businessTimelineCache: "id, company, episodeId, eventType",
+      conflictMapCache: "id, episodeId, conflictType, intensity, status",
+      continuityCheckCache: "id, episodeId, checkType, severity, status",
+      episodePlanCache: "id, seasonNumber, episodeNumber, title, storyDate",
+      storyPromptCache: "id, episodePlanId, promptType, title",
+      storyRuleCache: "id, ruleType, status, title",
+    });
+    this.version(14).stores({
+      readerIdentity: "readerId, deviceId, syncStatus",
+      readerProfiles: "readerId, country, city, currentRank, rewardPoints, lastSeenAt, syncStatus",
+      storyVotes: "id, episodeId, readerId, voteType, createdAt, syncStatus",
+      episodePacks: "content.episode.id, manifest.title, manifest.packId, manifest.version",
+      libraryPacks: "content.booklet.id, manifest.packId, manifest.bookletCode, manifest.title, manifest.version, manifest.category",
+      readingProgress: "episodeId, chapterId, updatedAt",
+      libraryReadingProgress: "bookletId, chapterId, sectionId, updatedAt",
+      readerActivityLog: "id, readerId, eventType, episodeId, syncStatus, createdAt, targetType, targetId",
+      readerChoices: "id, readerId, episodeId, choiceType, syncStatus, createdAt",
+      readerQuizAttempts: "id, readerId, quizId, episodeId, syncStatus, completedAt",
+      readerPollVotes: "id, readerId, pollId, episodeId, syncStatus, createdAt",
+      readerPredictions: "id, readerId, predictionId, episodeId, syncStatus, createdAt",
+      readerRewards: "id, readerId, rewardType, episodeId, syncStatus, earnedAt",
+      readerBadges: "id, readerId, badgeCode, syncStatus, earnedAt",
+      readerRankings: "id, readerId, period, points, updatedAt, syncStatus",
+      readerDramaParticipation: "id, readerId, participationType, episodeId, syncStatus, createdAt",
+      readerParticipation: "id, readerId, participationType, episodeId, syncStatus, createdAt",
+      syncQueue: "id, readerId, entityType, entityId, syncStatus, createdAt",
+      readerSettings: "id",
+      deviceIdentity: "deviceId, createdAt, lastSeenAt",
+      localLicences: "licenceId, readerId, deviceId, phoneNumber, plan, status, expiresAt, source, syncStatus",
+      activationAttempts: "id, readerId, deviceId, phoneNumber, activationCode, status, createdAt",
+      scratchCardAttempts: "id, readerId, deviceId, phoneNumber, scratchCardCode, status, createdAt",
+      agentActivationRequests: "id, agentCode, phoneNumber, plan, status, createdAt, syncStatus",
+      licenceActivityLog: "id, readerId, deviceId, eventType, licenceId, createdAt, syncStatus",
+      characterCache: "id, characterCode, displayName, nickname, occupation, role, status",
+      characterAppearanceCache: "id, characterId, episodeId, seasonNumber, episodeNumber, chapterNumber, importance",
+      characterTimelineCache: "id, characterId, eventType, eventDate, impactScore",
+      characterRelationshipCache: "id, relationshipId, characterA, characterB, relationshipType, type",
+      assetCache: "id, name, type",
+      relationshipCache: "id, type, fromCharacterId, toCharacterId, businessId",
+      vendorPacks: "manifest.packId, manifest.vendorId, manifest.version",
+      vendors: "id, businessName, sector, city, status",
+      products: "id, vendorId, name, category, brand, stockStatus",
+      productCategories: "id, name, sector",
+      vendorBranches: "id, vendorId, city, suburb",
+      vendorContacts: "id, vendorId, label",
+      quizCache: "id, episodeId, status, createdAt",
+      pollCache: "id, episodeId, status, createdAt",
+      predictionCache: "id, episodeId, status, closingDate",
+      leaderboardCache: "id, readerId, period, points, updatedAt",
+      catalogueCache: "id, contentType, episodeId, packId, requiredLicencePlan, visibility, status, releaseDate",
+      libraryCatalogueCache: "id, bookletId, bookletCode, title, category, requiredLicencePlan, status",
+      publishedPackCache: "id, episodeId, packId, packType, requiredLicencePlan, status, releaseDate",
+      releaseScheduleCache: "id, episodeId, packId, releaseDate, status, seasonNumber, episodeNumber",
+      contentRuleCache: "id, contentId, contentType, requiredLicencePlan, visibility",
+      productionActorCache: "id, fullName, stageName, availabilityStatus, status",
+      castingCache: "id, characterId, actorId, status",
+      productionCharacterCache: "id, name, actorId, role, currentStoryStatus",
+      sceneCache: "id, episodeId, chapterId, sceneNumber, locationId, status",
+      locationCache: "id, name, city, locationType, availability",
+      productionPropertyCache: "id, name, type, status",
+      productionVehicleCache: "id, name, registration, type",
+      productionAssetCache: "id, assetType, relatedCharacterId, relatedSceneId, relatedEpisodeId",
+      productionScheduleCache: "id, episodeId, sceneId, scheduledDate, locationId, status",
+      continuityRecordCache: "id, episodeId, sceneId, continuityType, severity, status",
+      storyTimelineCache: "id, storyDate, seasonNumber, episodeNumber, characterInvolved, businessInvolved",
+      characterArcCache: "id, characterId, seasonNumber, episodeId, arcStage",
+      relationshipArcCache: "id, characterA, characterB, relationshipType, currentStatus",
+      businessTimelineCache: "id, company, episodeId, eventType",
+      conflictMapCache: "id, episodeId, conflictType, intensity, status",
+      continuityCheckCache: "id, episodeId, checkType, severity, status",
+      episodePlanCache: "id, seasonNumber, episodeNumber, title, storyDate",
+      storyPromptCache: "id, episodePlanId, promptType, title",
+      storyRuleCache: "id, ruleType, status, title",
+    });
+    this.version(15).stores({
+      readerIdentity: "readerId, deviceId, syncStatus",
+      readerProfiles: "readerId, country, city, currentRank, rewardPoints, lastSeenAt, syncStatus",
+      storyVotes: "id, episodeId, readerId, voteType, createdAt, syncStatus",
+      episodePacks: "content.episode.id, manifest.title, manifest.packId, manifest.version",
+      libraryPacks: "content.booklet.id, manifest.packId, manifest.bookletCode, manifest.title, manifest.version, manifest.category",
+      readingProgress: "episodeId, chapterId, updatedAt",
+      libraryReadingProgress: "bookletId, chapterId, sectionId, updatedAt",
+      readerActivityLog: "id, readerId, eventType, episodeId, syncStatus, createdAt, targetType, targetId",
+      readerChoices: "id, readerId, episodeId, choiceType, syncStatus, createdAt",
+      readerQuizAttempts: "id, readerId, quizId, episodeId, syncStatus, completedAt",
+      readerPollVotes: "id, readerId, pollId, episodeId, syncStatus, createdAt",
+      readerPredictions: "id, readerId, predictionId, episodeId, syncStatus, createdAt",
+      readerRewards: "id, readerId, rewardType, episodeId, syncStatus, earnedAt",
+      readerBadges: "id, readerId, badgeCode, syncStatus, earnedAt",
+      readerRankings: "id, readerId, period, points, updatedAt, syncStatus",
+      readerDramaParticipation: "id, readerId, participationType, episodeId, syncStatus, createdAt",
+      readerParticipation: "id, readerId, participationType, episodeId, syncStatus, createdAt",
+      syncQueue: "id, readerId, entityType, entityId, syncStatus, createdAt",
+      readerSettings: "id",
+      deviceIdentity: "deviceId, createdAt, lastSeenAt",
+      localLicences: "licenceId, readerId, deviceId, phoneNumber, plan, status, expiresAt, source, syncStatus",
+      activationAttempts: "id, readerId, deviceId, phoneNumber, activationCode, status, createdAt",
+      scratchCardAttempts: "id, readerId, deviceId, phoneNumber, scratchCardCode, status, createdAt",
+      agentActivationRequests: "id, agentCode, phoneNumber, plan, status, createdAt, syncStatus",
+      licenceActivityLog: "id, readerId, deviceId, eventType, licenceId, createdAt, syncStatus",
+      characterCache: "id, characterCode, displayName, nickname, occupation, role, status",
+      characterAppearanceCache: "id, characterId, episodeId, seasonNumber, episodeNumber, chapterNumber, importance",
+      characterTimelineCache: "id, characterId, eventType, eventDate, impactScore",
+      characterRelationshipCache: "id, relationshipId, characterA, characterB, relationshipType, type",
+      assetCache: "id, name, type",
+      propertyCache: "id, propertyCode, name, propertyType, type, country, city, suburb, status",
+      propertyOwnershipCache: "id, propertyId, ownerType, ownerId, ownerName",
+      propertyTenantCache: "id, propertyId, tenantType, tenantId, tenantName, status",
+      propertyValuationCache: "id, propertyId, valuationDate, estimatedValue, currency",
+      propertyAssetCache: "id, propertyId, assetType, assetName",
+      propertyAppearanceCache: "id, propertyId, seasonNumber, episodeNumber, importance",
+      propertyRelationshipCache: "id, propertyA, propertyB, relationshipType",
+      relationshipCache: "id, type, fromCharacterId, toCharacterId, businessId",
+      vendorPacks: "manifest.packId, manifest.vendorId, manifest.version",
+      vendors: "id, businessName, sector, city, status",
+      products: "id, vendorId, name, category, brand, stockStatus",
+      productCategories: "id, name, sector",
+      vendorBranches: "id, vendorId, city, suburb",
+      vendorContacts: "id, vendorId, label",
+      quizCache: "id, episodeId, status, createdAt",
+      pollCache: "id, episodeId, status, createdAt",
+      predictionCache: "id, episodeId, status, closingDate",
+      leaderboardCache: "id, readerId, period, points, updatedAt",
+      catalogueCache: "id, contentType, episodeId, packId, requiredLicencePlan, visibility, status, releaseDate",
+      libraryCatalogueCache: "id, bookletId, bookletCode, title, category, requiredLicencePlan, status",
+      publishedPackCache: "id, episodeId, packId, packType, requiredLicencePlan, status, releaseDate",
+      releaseScheduleCache: "id, episodeId, packId, releaseDate, status, seasonNumber, episodeNumber",
+      contentRuleCache: "id, contentId, contentType, requiredLicencePlan, visibility",
+      productionActorCache: "id, fullName, stageName, availabilityStatus, status",
+      castingCache: "id, characterId, actorId, status",
+      productionCharacterCache: "id, name, actorId, role, currentStoryStatus",
+      sceneCache: "id, episodeId, chapterId, sceneNumber, locationId, status",
+      locationCache: "id, name, city, locationType, availability",
+      productionPropertyCache: "id, name, type, status",
+      productionVehicleCache: "id, name, registration, type",
+      productionAssetCache: "id, assetType, relatedCharacterId, relatedSceneId, relatedEpisodeId",
+      productionScheduleCache: "id, episodeId, sceneId, scheduledDate, locationId, status",
+      continuityRecordCache: "id, episodeId, sceneId, continuityType, severity, status",
+      storyTimelineCache: "id, storyDate, seasonNumber, episodeNumber, characterInvolved, businessInvolved",
+      characterArcCache: "id, characterId, seasonNumber, episodeId, arcStage",
+      relationshipArcCache: "id, characterA, characterB, relationshipType, currentStatus",
+      businessTimelineCache: "id, company, episodeId, eventType",
+      conflictMapCache: "id, episodeId, conflictType, intensity, status",
+      continuityCheckCache: "id, episodeId, checkType, severity, status",
+      episodePlanCache: "id, seasonNumber, episodeNumber, title, storyDate",
+      storyPromptCache: "id, episodePlanId, promptType, title",
+      storyRuleCache: "id, ruleType, status, title",
+    });
+    this.version(16).stores({
+      readerIdentity: "readerId, deviceId, syncStatus",
+      readerProfiles: "readerId, country, city, currentRank, rewardPoints, lastSeenAt, syncStatus",
+      storyVotes: "id, episodeId, readerId, voteType, createdAt, syncStatus",
+      episodePacks: "content.episode.id, manifest.title, manifest.packId, manifest.version",
+      libraryPacks: "content.booklet.id, manifest.packId, manifest.bookletCode, manifest.title, manifest.version, manifest.category",
+      readingProgress: "episodeId, chapterId, updatedAt",
+      libraryReadingProgress: "bookletId, chapterId, sectionId, updatedAt",
+      readerActivityLog: "id, readerId, eventType, episodeId, syncStatus, createdAt, targetType, targetId",
+      readerChoices: "id, readerId, episodeId, choiceType, syncStatus, createdAt",
+      readerQuizAttempts: "id, readerId, quizId, episodeId, syncStatus, completedAt",
+      readerPollVotes: "id, readerId, pollId, episodeId, syncStatus, createdAt",
+      readerPredictions: "id, readerId, predictionId, episodeId, syncStatus, createdAt",
+      readerRewards: "id, readerId, rewardType, episodeId, syncStatus, earnedAt",
+      readerBadges: "id, readerId, badgeCode, syncStatus, earnedAt",
+      readerRankings: "id, readerId, period, points, updatedAt, syncStatus",
+      readerDramaParticipation: "id, readerId, participationType, episodeId, syncStatus, createdAt",
+      readerParticipation: "id, readerId, participationType, episodeId, syncStatus, createdAt",
+      syncQueue: "id, readerId, entityType, entityId, syncStatus, createdAt",
+      readerSettings: "id",
+      deviceIdentity: "deviceId, createdAt, lastSeenAt",
+      localLicences: "licenceId, readerId, deviceId, phoneNumber, plan, status, expiresAt, source, syncStatus",
+      activationAttempts: "id, readerId, deviceId, phoneNumber, activationCode, status, createdAt",
+      scratchCardAttempts: "id, readerId, deviceId, phoneNumber, scratchCardCode, status, createdAt",
+      agentActivationRequests: "id, agentCode, phoneNumber, plan, status, createdAt, syncStatus",
+      licenceActivityLog: "id, readerId, deviceId, eventType, licenceId, createdAt, syncStatus",
+      characterCache: "id, characterCode, displayName, nickname, occupation, role, status",
+      characterAppearanceCache: "id, characterId, episodeId, seasonNumber, episodeNumber, chapterNumber, importance",
+      characterTimelineCache: "id, characterId, eventType, eventDate, impactScore",
+      characterRelationshipCache: "id, relationshipId, characterA, characterB, relationshipType, type",
+      assetCache: "id, name, type",
+      propertyCache: "id, propertyCode, name, propertyType, type, country, city, suburb, status",
+      propertyOwnershipCache: "id, propertyId, ownerType, ownerId, ownerName",
+      propertyTenantCache: "id, propertyId, tenantType, tenantId, tenantName, status",
+      propertyValuationCache: "id, propertyId, valuationDate, estimatedValue, currency",
+      propertyAssetCache: "id, propertyId, assetType, assetName",
+      propertyAppearanceCache: "id, propertyId, seasonNumber, episodeNumber, importance",
+      propertyRelationshipCache: "id, propertyA, propertyB, relationshipType",
+      vehicleCache: "id, vehicleCode, name, vehicleType, make, model, registrationNumber, city, status",
+      vehicleOwnershipCache: "id, vehicleId, ownerType, ownerId, ownerName",
+      vehicleUsageCache: "id, vehicleId, usageType, assignedCharacterId, assignedBusinessId",
+      vehicleMaintenanceCache: "id, vehicleId, maintenanceDate, maintenanceType",
+      vehicleAppearanceCache: "id, vehicleId, seasonNumber, episodeNumber, importance",
+      vehicleRelationshipCache: "id, vehicleA, vehicleB, relationshipType",
+      relationshipCache: "id, type, fromCharacterId, toCharacterId, businessId",
+      vendorPacks: "manifest.packId, manifest.vendorId, manifest.version",
+      vendors: "id, businessName, sector, city, status",
+      products: "id, vendorId, name, category, brand, stockStatus",
+      productCategories: "id, name, sector",
+      vendorBranches: "id, vendorId, city, suburb",
+      vendorContacts: "id, vendorId, label",
+      quizCache: "id, episodeId, status, createdAt",
+      pollCache: "id, episodeId, status, createdAt",
+      predictionCache: "id, episodeId, status, closingDate",
+      leaderboardCache: "id, readerId, period, points, updatedAt",
+      catalogueCache: "id, contentType, episodeId, packId, requiredLicencePlan, visibility, status, releaseDate",
+      libraryCatalogueCache: "id, bookletId, bookletCode, title, category, requiredLicencePlan, status",
+      publishedPackCache: "id, episodeId, packId, packType, requiredLicencePlan, status, releaseDate",
+      releaseScheduleCache: "id, episodeId, packId, releaseDate, status, seasonNumber, episodeNumber",
+      contentRuleCache: "id, contentId, contentType, requiredLicencePlan, visibility",
+      productionActorCache: "id, fullName, stageName, availabilityStatus, status",
+      castingCache: "id, characterId, actorId, status",
+      productionCharacterCache: "id, name, actorId, role, currentStoryStatus",
+      sceneCache: "id, episodeId, chapterId, sceneNumber, locationId, status",
+      locationCache: "id, name, city, locationType, availability",
+      productionPropertyCache: "id, name, type, status",
+      productionVehicleCache: "id, name, registration, type",
+      productionAssetCache: "id, assetType, relatedCharacterId, relatedSceneId, relatedEpisodeId",
+      productionScheduleCache: "id, episodeId, sceneId, scheduledDate, locationId, status",
+      continuityRecordCache: "id, episodeId, sceneId, continuityType, severity, status",
+      storyTimelineCache: "id, storyDate, seasonNumber, episodeNumber, characterInvolved, businessInvolved",
+      characterArcCache: "id, characterId, seasonNumber, episodeId, arcStage",
+      relationshipArcCache: "id, characterA, characterB, relationshipType, currentStatus",
+      businessTimelineCache: "id, company, episodeId, eventType",
+      conflictMapCache: "id, episodeId, conflictType, intensity, status",
+      continuityCheckCache: "id, episodeId, checkType, severity, status",
+      episodePlanCache: "id, seasonNumber, episodeNumber, title, storyDate",
+      storyPromptCache: "id, episodePlanId, promptType, title",
+      storyRuleCache: "id, ruleType, status, title",
+    });
+    this.version(17).stores({
+      readerIdentity: "readerId, deviceId, syncStatus",
+      readerProfiles: "readerId, country, city, currentRank, rewardPoints, lastSeenAt, syncStatus",
+      storyVotes: "id, episodeId, readerId, voteType, createdAt, syncStatus",
+      episodePacks: "content.episode.id, manifest.title, manifest.packId, manifest.version",
+      libraryPacks: "content.booklet.id, manifest.packId, manifest.bookletCode, manifest.title, manifest.version, manifest.category",
+      readingProgress: "episodeId, chapterId, updatedAt",
+      libraryReadingProgress: "bookletId, chapterId, sectionId, updatedAt",
+      readerActivityLog: "id, readerId, eventType, episodeId, syncStatus, createdAt, targetType, targetId",
+      readerChoices: "id, readerId, episodeId, choiceType, syncStatus, createdAt",
+      readerQuizAttempts: "id, readerId, quizId, episodeId, syncStatus, completedAt",
+      readerPollVotes: "id, readerId, pollId, episodeId, syncStatus, createdAt",
+      readerPredictions: "id, readerId, predictionId, episodeId, syncStatus, createdAt",
+      readerRewards: "id, readerId, rewardType, episodeId, syncStatus, earnedAt",
+      readerBadges: "id, readerId, badgeCode, syncStatus, earnedAt",
+      readerRankings: "id, readerId, period, points, updatedAt, syncStatus",
+      readerDramaParticipation: "id, readerId, participationType, episodeId, syncStatus, createdAt",
+      readerParticipation: "id, readerId, participationType, episodeId, syncStatus, createdAt",
+      syncQueue: "id, readerId, entityType, entityId, syncStatus, createdAt",
+      readerSettings: "id",
+      deviceIdentity: "deviceId, createdAt, lastSeenAt",
+      localLicences: "licenceId, readerId, deviceId, phoneNumber, plan, status, expiresAt, source, syncStatus",
+      activationAttempts: "id, readerId, deviceId, phoneNumber, activationCode, status, createdAt",
+      scratchCardAttempts: "id, readerId, deviceId, phoneNumber, scratchCardCode, status, createdAt",
+      agentActivationRequests: "id, agentCode, phoneNumber, plan, status, createdAt, syncStatus",
+      licenceActivityLog: "id, readerId, deviceId, eventType, licenceId, createdAt, syncStatus",
+      characterCache: "id, characterCode, displayName, nickname, occupation, role, status",
+      characterAppearanceCache: "id, characterId, episodeId, seasonNumber, episodeNumber, chapterNumber, importance",
+      characterTimelineCache: "id, characterId, eventType, eventDate, impactScore",
+      characterRelationshipCache: "id, relationshipId, characterA, characterB, relationshipType, type",
+      assetCache: "id, name, type",
+      actorCache: "id, actorCode, fullName, stageName, email, city, availabilityStatus, status",
+      actorPortfolioCache: "id, actorId, portfolioType, title",
+      actorAvailabilityCache: "id, actorId, date, status",
+      actorAuditionCache: "id, actorId, characterId, auditionDate, status",
+      castingAssignmentCache: "id, actorId, characterId, roleType, status",
+      actorEpisodeAppearanceCache: "id, actorId, characterId, episodeId, seasonNumber, episodeNumber",
+      actorSceneAssignmentCache: "id, actorId, characterId, sceneId, episodeId, status",
+      talentNoteCache: "id, actorId, noteType, createdAt",
+      propertyCache: "id, propertyCode, name, propertyType, type, country, city, suburb, status",
+      propertyOwnershipCache: "id, propertyId, ownerType, ownerId, ownerName",
+      propertyTenantCache: "id, propertyId, tenantType, tenantId, tenantName, status",
+      propertyValuationCache: "id, propertyId, valuationDate, estimatedValue, currency",
+      propertyAssetCache: "id, propertyId, assetType, assetName",
+      propertyAppearanceCache: "id, propertyId, seasonNumber, episodeNumber, importance",
+      propertyRelationshipCache: "id, propertyA, propertyB, relationshipType",
+      vehicleCache: "id, vehicleCode, name, vehicleType, make, model, registrationNumber, city, status",
+      vehicleOwnershipCache: "id, vehicleId, ownerType, ownerId, ownerName",
+      vehicleUsageCache: "id, vehicleId, usageType, assignedCharacterId, assignedBusinessId",
+      vehicleMaintenanceCache: "id, vehicleId, maintenanceDate, maintenanceType",
+      vehicleAppearanceCache: "id, vehicleId, seasonNumber, episodeNumber, importance",
+      vehicleRelationshipCache: "id, vehicleA, vehicleB, relationshipType",
+      relationshipCache: "id, type, fromCharacterId, toCharacterId, businessId",
+      vendorPacks: "manifest.packId, manifest.vendorId, manifest.version",
+      vendors: "id, businessName, sector, city, status",
+      products: "id, vendorId, name, category, brand, stockStatus",
+      productCategories: "id, name, sector",
+      vendorBranches: "id, vendorId, city, suburb",
+      vendorContacts: "id, vendorId, label",
+      quizCache: "id, episodeId, status, createdAt",
+      pollCache: "id, episodeId, status, createdAt",
+      predictionCache: "id, episodeId, status, closingDate",
+      leaderboardCache: "id, readerId, period, points, updatedAt",
+      catalogueCache: "id, contentType, episodeId, packId, requiredLicencePlan, visibility, status, releaseDate",
+      libraryCatalogueCache: "id, bookletId, bookletCode, title, category, requiredLicencePlan, status",
+      publishedPackCache: "id, episodeId, packId, packType, requiredLicencePlan, status, releaseDate",
+      releaseScheduleCache: "id, episodeId, packId, releaseDate, status, seasonNumber, episodeNumber",
+      contentRuleCache: "id, contentId, contentType, requiredLicencePlan, visibility",
+      productionActorCache: "id, fullName, stageName, availabilityStatus, status",
+      castingCache: "id, characterId, actorId, status",
+      productionCharacterCache: "id, name, actorId, role, currentStoryStatus",
+      sceneCache: "id, episodeId, chapterId, sceneNumber, locationId, status",
+      locationCache: "id, name, city, locationType, availability",
+      productionPropertyCache: "id, name, type, status",
+      productionVehicleCache: "id, name, registration, type",
+      productionAssetCache: "id, assetType, relatedCharacterId, relatedSceneId, relatedEpisodeId",
+      productionScheduleCache: "id, episodeId, sceneId, scheduledDate, locationId, status",
+      continuityRecordCache: "id, episodeId, sceneId, continuityType, severity, status",
+      storyTimelineCache: "id, storyDate, seasonNumber, episodeNumber, characterInvolved, businessInvolved",
+      characterArcCache: "id, characterId, seasonNumber, episodeId, arcStage",
+      relationshipArcCache: "id, characterA, characterB, relationshipType, currentStatus",
+      businessTimelineCache: "id, company, episodeId, eventType",
+      conflictMapCache: "id, episodeId, conflictType, intensity, status",
+      continuityCheckCache: "id, episodeId, checkType, severity, status",
+      episodePlanCache: "id, seasonNumber, episodeNumber, title, storyDate",
+      storyPromptCache: "id, episodePlanId, promptType, title",
+      storyRuleCache: "id, ruleType, status, title",
+    });
+    this.version(18).stores({
+      readerIdentity: "readerId, deviceId, syncStatus",
+      readerProfiles: "readerId, country, city, currentRank, rewardPoints, lastSeenAt, syncStatus",
+      storyVotes: "id, episodeId, readerId, voteType, createdAt, syncStatus",
+      episodePacks: "content.episode.id, manifest.title, manifest.packId, manifest.version",
+      libraryPacks: "content.booklet.id, manifest.packId, manifest.bookletCode, manifest.title, manifest.version, manifest.category",
+      readingProgress: "episodeId, chapterId, updatedAt",
+      libraryReadingProgress: "bookletId, chapterId, sectionId, updatedAt",
+      readerActivityLog: "id, readerId, eventType, episodeId, syncStatus, createdAt, targetType, targetId",
+      readerChoices: "id, readerId, episodeId, choiceType, syncStatus, createdAt",
+      readerQuizAttempts: "id, readerId, quizId, episodeId, syncStatus, completedAt",
+      readerPollVotes: "id, readerId, pollId, episodeId, syncStatus, createdAt",
+      readerPredictions: "id, readerId, predictionId, episodeId, syncStatus, createdAt",
+      readerRewards: "id, readerId, rewardType, episodeId, syncStatus, earnedAt",
+      readerBadges: "id, readerId, badgeCode, syncStatus, earnedAt",
+      readerRankings: "id, readerId, period, points, updatedAt, syncStatus",
+      readerDramaParticipation: "id, readerId, participationType, episodeId, syncStatus, createdAt",
+      readerParticipation: "id, readerId, participationType, episodeId, syncStatus, createdAt",
+      syncQueue: "id, readerId, entityType, entityId, syncStatus, createdAt",
+      readerSettings: "id",
+      deviceIdentity: "deviceId, createdAt, lastSeenAt",
+      localLicences: "licenceId, readerId, deviceId, phoneNumber, plan, status, expiresAt, source, syncStatus",
+      activationAttempts: "id, readerId, deviceId, phoneNumber, activationCode, status, createdAt",
+      scratchCardAttempts: "id, readerId, deviceId, phoneNumber, scratchCardCode, status, createdAt",
+      agentActivationRequests: "id, agentCode, phoneNumber, plan, status, createdAt, syncStatus",
+      licenceActivityLog: "id, readerId, deviceId, eventType, licenceId, createdAt, syncStatus",
+      characterCache: "id, characterCode, displayName, nickname, occupation, role, status",
+      characterAppearanceCache: "id, characterId, episodeId, seasonNumber, episodeNumber, chapterNumber, importance",
+      characterTimelineCache: "id, characterId, eventType, eventDate, impactScore",
+      characterRelationshipCache: "id, relationshipId, characterA, characterB, relationshipType, type",
+      assetCache: "id, name, type",
+      actorCache: "id, actorCode, fullName, stageName, email, city, availabilityStatus, status",
+      actorPortfolioCache: "id, actorId, portfolioType, title",
+      actorAvailabilityCache: "id, actorId, date, status",
+      actorAuditionCache: "id, actorId, characterId, auditionDate, status",
+      castingAssignmentCache: "id, actorId, characterId, roleType, status",
+      actorEpisodeAppearanceCache: "id, actorId, characterId, episodeId, seasonNumber, episodeNumber",
+      actorSceneAssignmentCache: "id, actorId, characterId, sceneId, episodeId, status",
+      talentNoteCache: "id, actorId, noteType, createdAt",
+      propertyCache: "id, propertyCode, name, propertyType, type, country, city, suburb, status",
+      propertyOwnershipCache: "id, propertyId, ownerType, ownerId, ownerName",
+      propertyTenantCache: "id, propertyId, tenantType, tenantId, tenantName, status",
+      propertyValuationCache: "id, propertyId, valuationDate, estimatedValue, currency",
+      propertyAssetCache: "id, propertyId, assetType, assetName",
+      propertyAppearanceCache: "id, propertyId, seasonNumber, episodeNumber, importance",
+      propertyRelationshipCache: "id, propertyA, propertyB, relationshipType",
+      vehicleCache: "id, vehicleCode, name, vehicleType, make, model, registrationNumber, city, status",
+      vehicleOwnershipCache: "id, vehicleId, ownerType, ownerId, ownerName",
+      vehicleUsageCache: "id, vehicleId, usageType, assignedCharacterId, assignedBusinessId",
+      vehicleMaintenanceCache: "id, vehicleId, maintenanceDate, maintenanceType",
+      vehicleAppearanceCache: "id, vehicleId, seasonNumber, episodeNumber, importance",
+      vehicleRelationshipCache: "id, vehicleA, vehicleB, relationshipType",
+      relationshipCache: "id, type, fromCharacterId, toCharacterId, businessId",
+      vendorPacks: "manifest.packId, manifest.vendorId, manifest.version",
+      vendors: "id, businessName, sector, city, status",
+      products: "id, vendorId, name, category, brand, stockStatus",
+      productCategories: "id, name, sector",
+      vendorBranches: "id, vendorId, city, suburb",
+      vendorContacts: "id, vendorId, label",
+      quizCache: "id, episodeId, status, createdAt",
+      pollCache: "id, episodeId, status, createdAt",
+      predictionCache: "id, episodeId, status, closingDate",
+      leaderboardCache: "id, readerId, period, points, updatedAt",
+      catalogueCache: "id, contentType, episodeId, packId, requiredLicencePlan, visibility, status, releaseDate",
+      libraryCatalogueCache: "id, bookletId, bookletCode, title, category, requiredLicencePlan, status",
+      publishedPackCache: "id, episodeId, packId, packType, requiredLicencePlan, status, releaseDate",
+      releaseScheduleCache: "id, episodeId, packId, releaseDate, status, seasonNumber, episodeNumber",
+      contentRuleCache: "id, contentId, contentType, requiredLicencePlan, visibility",
+      productionActorCache: "id, fullName, stageName, availabilityStatus, status",
+      castingCache: "id, characterId, actorId, status",
+      productionCharacterCache: "id, name, actorId, role, currentStoryStatus",
+      sceneCache: "id, sceneCode, episodeId, chapterId, sceneNumber, locationId, propertyId, businessId, productionStatus, continuityStatus",
+      sceneBreakdownCache: "id, sceneId",
+      sceneCastCache: "id, sceneId, characterId, actorId",
+      sceneAssetCache: "id, sceneId, assetType, assetId, assetName",
+      sceneContinuityCache: "id, sceneId, continuityType, severity, resolved",
+      sceneScheduleCache: "id, sceneId, scheduledDate, status, locationId, propertyId",
+      sceneShotListCache: "id, sceneId, shotNumber, shotType",
+      scenePropCache: "id, sceneId, propName, propType",
+      sceneWardrobeCache: "id, sceneId, characterId, actorId",
+      locationCache: "id, name, city, locationType, availability",
+      productionPropertyCache: "id, name, type, status",
+      productionVehicleCache: "id, name, registration, type",
+      productionAssetCache: "id, assetType, relatedCharacterId, relatedSceneId, relatedEpisodeId",
+      productionScheduleCache: "id, episodeId, sceneId, scheduledDate, locationId, status",
+      continuityRecordCache: "id, episodeId, sceneId, continuityType, severity, status",
+      storyTimelineCache: "id, storyDate, seasonNumber, episodeNumber, characterInvolved, businessInvolved",
+      characterArcCache: "id, characterId, seasonNumber, episodeId, arcStage",
+      relationshipArcCache: "id, characterA, characterB, relationshipType, currentStatus",
+      businessTimelineCache: "id, company, episodeId, eventType",
+      conflictMapCache: "id, episodeId, conflictType, intensity, status",
+      continuityCheckCache: "id, episodeId, checkType, severity, status",
+      episodePlanCache: "id, seasonNumber, episodeNumber, title, storyDate",
+      storyPromptCache: "id, episodePlanId, promptType, title",
+      storyRuleCache: "id, ruleType, status, title",
+    });
+    this.version(19).stores({
+      readerIdentity: "readerId, deviceId, syncStatus",
+      readerProfiles: "readerId, country, city, currentRank, rewardPoints, lastSeenAt, syncStatus",
+      storyVotes: "id, episodeId, readerId, voteType, createdAt, syncStatus",
+      episodePacks: "content.episode.id, manifest.title, manifest.packId, manifest.version",
+      libraryPacks: "content.booklet.id, manifest.packId, manifest.bookletCode, manifest.title, manifest.version, manifest.category",
+      readingProgress: "episodeId, chapterId, updatedAt",
+      libraryReadingProgress: "bookletId, chapterId, sectionId, updatedAt",
+      readerActivityLog: "id, readerId, eventType, episodeId, syncStatus, createdAt, targetType, targetId",
+      readerChoices: "id, readerId, episodeId, choiceType, syncStatus, createdAt",
+      readerQuizAttempts: "id, readerId, quizId, episodeId, syncStatus, completedAt",
+      readerPollVotes: "id, readerId, pollId, episodeId, syncStatus, createdAt",
+      readerPredictions: "id, readerId, predictionId, episodeId, syncStatus, createdAt",
+      readerRewards: "id, readerId, rewardType, episodeId, syncStatus, earnedAt",
+      readerBadges: "id, readerId, badgeCode, syncStatus, earnedAt",
+      readerRankings: "id, readerId, period, points, updatedAt, syncStatus",
+      readerDramaParticipation: "id, readerId, participationType, episodeId, syncStatus, createdAt",
+      readerParticipation: "id, readerId, participationType, episodeId, syncStatus, createdAt",
+      syncQueue: "id, readerId, entityType, entityId, syncStatus, createdAt",
+      readerSettings: "id",
+      deviceIdentity: "deviceId, createdAt, lastSeenAt",
+      localLicences: "licenceId, readerId, deviceId, phoneNumber, plan, status, expiresAt, source, syncStatus",
+      activationAttempts: "id, readerId, deviceId, phoneNumber, activationCode, status, createdAt",
+      scratchCardAttempts: "id, readerId, deviceId, phoneNumber, scratchCardCode, status, createdAt",
+      agentActivationRequests: "id, agentCode, phoneNumber, plan, status, createdAt, syncStatus",
+      licenceActivityLog: "id, readerId, deviceId, eventType, licenceId, createdAt, syncStatus",
+      characterCache: "id, characterCode, displayName, nickname, occupation, role, status",
+      characterAppearanceCache: "id, characterId, episodeId, seasonNumber, episodeNumber, chapterNumber, importance",
+      characterTimelineCache: "id, characterId, eventType, eventDate, impactScore",
+      characterRelationshipCache: "id, relationshipId, characterA, characterB, relationshipType, type",
+      assetCache: "id, name, type",
+      actorCache: "id, actorCode, fullName, stageName, email, city, availabilityStatus, status",
+      actorPortfolioCache: "id, actorId, portfolioType, title",
+      actorAvailabilityCache: "id, actorId, date, status",
+      actorAuditionCache: "id, actorId, characterId, auditionDate, status",
+      castingAssignmentCache: "id, actorId, characterId, roleType, status",
+      actorEpisodeAppearanceCache: "id, actorId, characterId, episodeId, seasonNumber, episodeNumber",
+      actorSceneAssignmentCache: "id, actorId, characterId, sceneId, episodeId, status",
+      talentNoteCache: "id, actorId, noteType, createdAt",
+      propertyCache: "id, propertyCode, name, propertyType, type, country, city, suburb, status",
+      propertyOwnershipCache: "id, propertyId, ownerType, ownerId, ownerName",
+      propertyTenantCache: "id, propertyId, tenantType, tenantId, tenantName, status",
+      propertyValuationCache: "id, propertyId, valuationDate, estimatedValue, currency",
+      propertyAssetCache: "id, propertyId, assetType, assetName",
+      propertyAppearanceCache: "id, propertyId, seasonNumber, episodeNumber, importance",
+      propertyRelationshipCache: "id, propertyA, propertyB, relationshipType",
+      vehicleCache: "id, vehicleCode, name, vehicleType, make, model, registrationNumber, city, status",
+      vehicleOwnershipCache: "id, vehicleId, ownerType, ownerId, ownerName",
+      vehicleUsageCache: "id, vehicleId, usageType, assignedCharacterId, assignedBusinessId",
+      vehicleMaintenanceCache: "id, vehicleId, maintenanceDate, maintenanceType",
+      vehicleAppearanceCache: "id, vehicleId, seasonNumber, episodeNumber, importance",
+      vehicleRelationshipCache: "id, vehicleA, vehicleB, relationshipType",
+      relationshipCache: "id, type, fromCharacterId, toCharacterId, businessId",
+      vendorPacks: "manifest.packId, manifest.vendorId, manifest.version",
+      vendors: "id, businessName, sector, city, status",
+      products: "id, vendorId, name, category, brand, stockStatus",
+      productCategories: "id, name, sector",
+      vendorBranches: "id, vendorId, city, suburb",
+      vendorContacts: "id, vendorId, label",
+      quizCache: "id, episodeId, status, createdAt",
+      pollCache: "id, episodeId, status, createdAt",
+      predictionCache: "id, episodeId, status, closingDate",
+      leaderboardCache: "id, readerId, period, points, updatedAt",
+      catalogueCache: "id, contentType, episodeId, packId, requiredLicencePlan, visibility, status, releaseDate",
+      libraryCatalogueCache: "id, bookletId, bookletCode, title, category, requiredLicencePlan, status",
+      publishedPackCache: "id, episodeId, packId, packType, requiredLicencePlan, status, releaseDate",
+      releaseScheduleCache: "id, episodeId, packId, releaseDate, status, seasonNumber, episodeNumber",
+      contentRuleCache: "id, contentId, contentType, requiredLicencePlan, visibility",
+      productionActorCache: "id, fullName, stageName, availabilityStatus, status",
+      castingCache: "id, characterId, actorId, status",
+      productionCharacterCache: "id, name, actorId, role, currentStoryStatus",
+      sceneCache: "id, sceneCode, episodeId, chapterId, sceneNumber, locationId, propertyId, businessId, productionStatus, continuityStatus",
+      sceneBreakdownCache: "id, sceneId",
+      sceneCastCache: "id, sceneId, characterId, actorId",
+      sceneAssetCache: "id, sceneId, assetType, assetId, assetName",
+      sceneContinuityCache: "id, sceneId, continuityType, severity, resolved",
+      sceneScheduleCache: "id, sceneId, scheduledDate, status, locationId, propertyId",
+      sceneShotListCache: "id, sceneId, shotNumber, shotType",
+      scenePropCache: "id, sceneId, propName, propType",
+      sceneWardrobeCache: "id, sceneId, characterId, actorId",
+      locationCache: "id, name, city, locationType, availability",
+      productionPropertyCache: "id, name, type, status",
+      productionVehicleCache: "id, name, registration, type",
+      productionAssetCache: "id, assetType, relatedCharacterId, relatedSceneId, relatedEpisodeId",
+      productionScheduleCache: "id, episodeId, sceneId, scheduledDate, locationId, status",
+      continuityRecordCache: "id, episodeId, sceneId, continuityType, severity, status",
+      storyTimelineCache: "id, storyDate, seasonNumber, episodeNumber, characterInvolved, businessInvolved",
+      characterArcCache: "id, characterId, seasonNumber, episodeId, arcStage",
+      relationshipArcCache: "id, characterA, characterB, relationshipType, currentStatus",
+      businessTimelineCache: "id, company, episodeId, eventType",
+      conflictMapCache: "id, episodeId, conflictType, intensity, status",
+      continuityCheckCache: "id, checkCode, checkType, targetType, targetId, result, severity, resolved",
+      episodePlanCache: "id, seasonNumber, episodeNumber, title, storyDate",
+      storyPromptCache: "id, episodePlanId, promptType, title",
+      storyRuleCache: "id, ruleType, status, title",
+      timelineEventCache: "id, eventCode, eventType, seasonNumber, episodeNumber, episodeId, storyDate, importance",
+      continuityRuleCache: "id, ruleCode, ruleType, severity, active",
+      continuityWarningCache: "id, warningCode, targetType, targetId, linkedEntityType, linkedEntityId, severity, status",
+      characterContinuityCache: "id, entityId, entityType, status, statusDate",
+      businessContinuityCache: "id, entityId, entityType, status, statusDate",
+      propertyContinuityCache: "id, entityId, entityType, status, statusDate",
+      vehicleContinuityCache: "id, entityId, entityType, status, statusDate",
+      relationshipContinuityCache: "id, entityId, entityType, status, statusDate",
+      episodeContinuitySummaryCache: "id, episodeId, seasonNumber, episodeNumber, continuityStatus",
+    });
+    this.version(20).stores({
+      readerIdentity: "readerId, deviceId, syncStatus",
+      episodePacks: "content.episode.id, manifest.title, manifest.packId, manifest.version",
+      libraryPacks: "manifest.packId, manifest.bookletCode, manifest.version, content.booklet.id",
+      readingProgress: "episodeId, chapterId, updatedAt",
+      libraryReadingProgress: "bookletId, chapterId, updatedAt",
+      readerActivityLog: "id, readerId, eventType, episodeId, syncStatus, createdAt",
+      readerChoices: "id, readerId, episodeId, choiceType, syncStatus, createdAt",
+      readerQuizAttempts: "id, readerId, quizId, episodeId, syncStatus, completedAt",
+      readerPollVotes: "id, readerId, pollId, episodeId, syncStatus, createdAt",
+      readerPredictions: "id, readerId, predictionId, episodeId, syncStatus, createdAt",
+      readerRewards: "id, readerId, rewardType, episodeId, syncStatus, earnedAt",
+      readerBadges: "id, readerId, badgeCode, syncStatus, earnedAt",
+      readerRankings: "id, readerId, period, points, updatedAt, syncStatus",
+      readerProfiles: "id, readerId, country, city, currentRank, lastSeenAt",
+      storyVotes: "id, readerId, episodeId, voteType, createdAt",
+      readerDramaParticipation: "id, readerId, participationType, episodeId, syncStatus, createdAt",
+      readerParticipation: "id, readerId, participationType, episodeId, syncStatus, createdAt",
+      syncQueue: "id, readerId, entityType, entityId, syncStatus, createdAt",
+      readerSettings: "id",
+      deviceIdentity: "id, fingerprint, createdAt",
+      localLicences: "id, planCode, status, deviceId, expiresAt",
+      activationAttempts: "id, code, status, attemptedAt",
+      scratchCardAttempts: "id, code, status, attemptedAt",
+      agentActivationRequests: "id, agentId, status, createdAt",
+      licenceActivityLog: "id, activityType, createdAt",
+      characterCache: "id, name, displayName, role, status",
+      characterAppearanceCache: "id, characterId, episodeId, seasonNumber, episodeNumber",
+      characterTimelineCache: "id, characterId, eventType, eventDate",
+      characterRelationshipCache: "id, characterA, characterB, relationshipType",
+      assetCache: "id, name, title, type, assetType, category, status",
+      assetPromptCache: "id, assetId, promptType, title, style, status",
+      assetFolderCache: "id, name, category, storagePath",
+      assetVersionCache: "id, assetId, versionNumber, createdAt",
+      assetUsageCache: "id, assetId, usedInType, usedInId, createdAt",
+      actorCache: "id, actorCode, name, stageName, status",
+      actorPortfolioCache: "id, actorId, mediaType, title",
+      actorAvailabilityCache: "id, actorId, availabilityDate, status",
+      actorAuditionCache: "id, actorId, characterId, status",
+      castingAssignmentCache: "id, actorId, characterId, status",
+      actorEpisodeAppearanceCache: "id, actorId, episodeId, seasonNumber, episodeNumber",
+      actorSceneAssignmentCache: "id, actorId, sceneId, status",
+      talentNoteCache: "id, actorId, noteType, createdAt",
+      propertyCache: "id, propertyCode, name, propertyType, city, status",
+      propertyOwnershipCache: "id, propertyId, ownerType, ownerId",
+      propertyTenantCache: "id, propertyId, tenantType, tenantId, status",
+      propertyValuationCache: "id, propertyId, valuationDate, valuationSource",
+      propertyAssetCache: "id, propertyId, assetType, assetName",
+      propertyAppearanceCache: "id, propertyId, seasonNumber, episodeNumber",
+      propertyRelationshipCache: "id, propertyA, propertyB, relationshipType",
+      vehicleCache: "id, vehicleCode, name, vehicleType, registrationNumber, status",
+      vehicleOwnershipCache: "id, vehicleId, ownerType, ownerId",
+      vehicleUsageCache: "id, vehicleId, usageType, assignedCharacterId",
+      vehicleMaintenanceCache: "id, vehicleId, maintenanceDate, maintenanceType",
+      vehicleAppearanceCache: "id, vehicleId, seasonNumber, episodeNumber",
+      vehicleRelationshipCache: "id, vehicleA, vehicleB, relationshipType",
+      relationshipCache: "id, type, fromCharacterId, toCharacterId, businessId",
+      vendorPacks: "manifest.packId, manifest.vendorId, manifest.version",
+      vendors: "id, businessName, sector, city, status",
+      products: "id, vendorId, name, category, brand, stockStatus",
+      productCategories: "id, name, sector",
+      vendorBranches: "id, vendorId, city, suburb",
+      vendorContacts: "id, vendorId, label",
+      quizCache: "id, episodeId, status, createdAt",
+      pollCache: "id, episodeId, status, createdAt",
+      predictionCache: "id, episodeId, status, closingDate",
+      leaderboardCache: "id, readerId, period, points, updatedAt",
+      catalogueCache: "id, title, seasonNumber, episodeNumber, status",
+      libraryCatalogueCache: "bookletId, title, category, status, updatedAt",
+      publishedPackCache: "id, episodeId, packId, status, createdAt",
+      releaseScheduleCache: "id, episodeId, scheduledDate, status",
+      contentRuleCache: "id, ruleType, status",
+      productionActorCache: "id, name, status",
+      castingCache: "id, actorId, characterId, status",
+      productionCharacterCache: "id, name, role",
+      sceneCache: "id, sceneCode, sceneNumber, episodeId, productionStatus",
+      sceneBreakdownCache: "id, sceneId, episodeId",
+      sceneCastCache: "id, sceneId, actorId, characterId",
+      sceneAssetCache: "id, sceneId, assetType, assetId",
+      sceneContinuityCache: "id, sceneId, continuityType, status",
+      sceneScheduleCache: "id, sceneId, shootDate, status",
+      sceneShotListCache: "id, sceneId, shotNumber",
+      scenePropCache: "id, sceneId, propName",
+      sceneWardrobeCache: "id, sceneId, characterId",
+      locationCache: "id, name, type",
+      productionPropertyCache: "id, name, status",
+      productionVehicleCache: "id, name, status",
+      productionAssetCache: "id, name, assetType",
+      productionScheduleCache: "id, shootDate, status",
+      continuityRecordCache: "id, episodeId, status",
+      storyTimelineCache: "id, episodeId, eventType, storyDate",
+      characterArcCache: "id, characterId, arcType, status",
+      relationshipArcCache: "id, relationshipId, status",
+      businessTimelineCache: "id, businessId, eventType, storyDate",
+      conflictMapCache: "id, conflictType, status",
+      continuityCheckCache: "id, checkCode, checkType, targetType, targetId, result, severity, resolved",
+      episodePlanCache: "id, episodeId, seasonNumber, episodeNumber",
+      storyPromptCache: "id, promptType, title",
+      storyRuleCache: "id, ruleCode, ruleType, active",
+      timelineEventCache: "id, eventCode, eventType, seasonNumber, episodeNumber, episodeId, storyDate, importance",
+      continuityRuleCache: "id, ruleCode, ruleType, severity, active",
+      continuityWarningCache: "id, warningCode, targetType, targetId, linkedEntityType, linkedEntityId, severity, status",
+      characterContinuityCache: "id, entityId, entityType, status, statusDate",
+      businessContinuityCache: "id, entityId, entityType, status, statusDate",
+      propertyContinuityCache: "id, entityId, entityType, status, statusDate",
+      vehicleContinuityCache: "id, entityId, entityType, status, statusDate",
+      relationshipContinuityCache: "id, entityId, entityType, status, statusDate",
+      episodeContinuitySummaryCache: "id, episodeId, seasonNumber, episodeNumber, continuityStatus",
+    });
+    this.version(21).stores({
+      readerIdentity: "readerId, deviceId, syncStatus",
+      episodePacks: "content.episode.id, manifest.title, manifest.packId, manifest.version",
+      libraryPacks: "manifest.packId, manifest.bookletCode, manifest.version, content.booklet.id",
+      readingProgress: "episodeId, chapterId, updatedAt",
+      libraryReadingProgress: "bookletId, chapterId, updatedAt",
+      readerActivityLog: "id, readerId, eventType, episodeId, syncStatus, createdAt",
+      readerChoices: "id, readerId, episodeId, choiceType, syncStatus, createdAt",
+      readerQuizAttempts: "id, readerId, quizId, episodeId, syncStatus, completedAt",
+      readerPollVotes: "id, readerId, pollId, episodeId, syncStatus, createdAt",
+      readerPredictions: "id, readerId, predictionId, episodeId, syncStatus, createdAt",
+      readerRewards: "id, readerId, rewardType, episodeId, syncStatus, earnedAt",
+      readerBadges: "id, readerId, badgeCode, syncStatus, earnedAt",
+      readerRankings: "id, readerId, period, points, updatedAt, syncStatus",
+      readerProfiles: "id, readerId, country, city, currentRank, lastSeenAt",
+      storyVotes: "id, readerId, episodeId, voteType, createdAt",
+      readerDramaParticipation: "id, readerId, participationType, episodeId, syncStatus, createdAt",
+      readerParticipation: "id, readerId, participationType, episodeId, syncStatus, createdAt",
+      syncQueue: "id, readerId, entityType, entityId, syncStatus, createdAt",
+      readerSettings: "id",
+      deviceIdentity: "id, fingerprint, createdAt",
+      localLicences: "id, planCode, status, deviceId, expiresAt",
+      activationAttempts: "id, code, status, attemptedAt",
+      scratchCardAttempts: "id, code, status, attemptedAt",
+      agentActivationRequests: "id, agentId, status, createdAt",
+      licenceActivityLog: "id, activityType, createdAt",
+      characterCache: "id, name, displayName, role, status",
+      characterAppearanceCache: "id, characterId, episodeId, seasonNumber, episodeNumber",
+      characterTimelineCache: "id, characterId, eventType, eventDate",
+      characterRelationshipCache: "id, characterA, characterB, relationshipType",
+      assetCache: "id, name, title, type, assetType, category, status",
+      assetPromptCache: "id, assetId, promptType, title, style, status",
+      assetFolderCache: "id, name, category, storagePath",
+      assetVersionCache: "id, assetId, versionNumber, createdAt",
+      assetUsageCache: "id, assetId, usedInType, usedInId, createdAt",
+      actorCache: "id, actorCode, name, stageName, status",
+      actorPortfolioCache: "id, actorId, mediaType, title",
+      actorAvailabilityCache: "id, actorId, availabilityDate, status",
+      actorAuditionCache: "id, actorId, characterId, status",
+      castingAssignmentCache: "id, actorId, characterId, status",
+      actorEpisodeAppearanceCache: "id, actorId, episodeId, seasonNumber, episodeNumber",
+      actorSceneAssignmentCache: "id, actorId, sceneId, status",
+      talentNoteCache: "id, actorId, noteType, createdAt",
+      propertyCache: "id, propertyCode, name, propertyType, city, status",
+      propertyOwnershipCache: "id, propertyId, ownerType, ownerId",
+      propertyTenantCache: "id, propertyId, tenantType, tenantId, status",
+      propertyValuationCache: "id, propertyId, valuationDate, valuationSource",
+      propertyAssetCache: "id, propertyId, assetType, assetName",
+      propertyAppearanceCache: "id, propertyId, seasonNumber, episodeNumber",
+      propertyRelationshipCache: "id, propertyA, propertyB, relationshipType",
+      vehicleCache: "id, vehicleCode, name, vehicleType, registrationNumber, status",
+      vehicleOwnershipCache: "id, vehicleId, ownerType, ownerId",
+      vehicleUsageCache: "id, vehicleId, usageType, assignedCharacterId",
+      vehicleMaintenanceCache: "id, vehicleId, maintenanceDate, maintenanceType",
+      vehicleAppearanceCache: "id, vehicleId, seasonNumber, episodeNumber",
+      vehicleRelationshipCache: "id, vehicleA, vehicleB, relationshipType",
+      relationshipCache: "id, type, fromCharacterId, toCharacterId, businessId",
+      vendorPacks: "manifest.packId, manifest.vendorId, manifest.version",
+      vendors: "id, vendorCode, businessId, businessName, tradingName, sector, category, city, suburb, status",
+      products: "id, productCode, vendorId, name, category, subcategory, brand, availability, stockStatus",
+      productCategories: "id, name, slug, parentCategoryId, sortOrder, active",
+      vendorBranches: "id, vendorId, branchName, city, suburb, active",
+      vendorContacts: "id, vendorId, label, contactType, active",
+      commerceInterestLog: "id, readerId, eventType, vendorId, productId, searchTerm, syncStatus, createdAt",
+      commerceLinkCache: "id, linkType, sourceType, sourceId, targetType, targetId",
+      quizCache: "id, episodeId, status, createdAt",
+      pollCache: "id, episodeId, status, createdAt",
+      predictionCache: "id, episodeId, status, closingDate",
+      leaderboardCache: "id, readerId, period, points, updatedAt",
+      catalogueCache: "id, title, seasonNumber, episodeNumber, status",
+      libraryCatalogueCache: "bookletId, title, category, status, updatedAt",
+      publishedPackCache: "id, episodeId, packId, status, createdAt",
+      releaseScheduleCache: "id, episodeId, scheduledDate, status",
+      contentRuleCache: "id, ruleType, status",
+      productionActorCache: "id, name, status",
+      castingCache: "id, actorId, characterId, status",
+      productionCharacterCache: "id, name, role",
+      sceneCache: "id, sceneCode, sceneNumber, episodeId, productionStatus",
+      sceneBreakdownCache: "id, sceneId, episodeId",
+      sceneCastCache: "id, sceneId, actorId, characterId",
+      sceneAssetCache: "id, sceneId, assetType, assetId",
+      sceneContinuityCache: "id, sceneId, continuityType, status",
+      sceneScheduleCache: "id, sceneId, shootDate, status",
+      sceneShotListCache: "id, sceneId, shotNumber",
+      scenePropCache: "id, sceneId, propName",
+      sceneWardrobeCache: "id, sceneId, characterId",
+      locationCache: "id, name, type",
+      productionPropertyCache: "id, name, status",
+      productionVehicleCache: "id, name, status",
+      productionAssetCache: "id, name, assetType",
+      productionScheduleCache: "id, shootDate, status",
+      continuityRecordCache: "id, episodeId, status",
+      storyTimelineCache: "id, episodeId, eventType, storyDate",
+      characterArcCache: "id, characterId, arcType, status",
+      relationshipArcCache: "id, relationshipId, status",
+      businessTimelineCache: "id, businessId, eventType, storyDate",
+      conflictMapCache: "id, conflictType, status",
+      continuityCheckCache: "id, checkCode, checkType, targetType, targetId, result, severity, resolved",
+      episodePlanCache: "id, episodeId, seasonNumber, episodeNumber",
+      storyPromptCache: "id, promptType, title",
+      storyRuleCache: "id, ruleCode, ruleType, active",
+      timelineEventCache: "id, eventCode, eventType, seasonNumber, episodeNumber, episodeId, storyDate, importance",
+      continuityRuleCache: "id, ruleCode, ruleType, severity, active",
+      continuityWarningCache: "id, warningCode, targetType, targetId, linkedEntityType, linkedEntityId, severity, status",
+      characterContinuityCache: "id, entityId, entityType, status, statusDate",
+      businessContinuityCache: "id, entityId, entityType, status, statusDate",
+      propertyContinuityCache: "id, entityId, entityType, status, statusDate",
+      vehicleContinuityCache: "id, entityId, entityType, status, statusDate",
+      relationshipContinuityCache: "id, entityId, entityType, status, statusDate",
+      episodeContinuitySummaryCache: "id, episodeId, seasonNumber, episodeNumber, continuityStatus",
+    });
   }
 }
 
@@ -587,7 +1588,7 @@ export const readerDb = new EotReaderDb();
 const now = () => new Date().toISOString();
 const id = (prefix: string) => `${prefix}_${crypto.randomUUID()}`;
 
-function compareVersions(a: string, b: string) {
+export function compareEpisodePackVersions(a: string, b: string) {
   const left = a.split(".").map((part) => Number(part) || 0);
   const right = b.split(".").map((part) => Number(part) || 0);
   const length = Math.max(left.length, right.length);
@@ -710,13 +1711,19 @@ async function applyRewardRules(log: ReaderActivityLog) {
   if (log.eventType === "reward_earned" || log.eventType === "badge_earned") return;
   const earnedAt = now();
   const rewardMap: Partial<Record<ReaderEventType, { points: number; title: string; description: string }>> = {
-    pack_imported: { points: 10, title: "First pack imported", description: "Imported an Empire of Trust episode pack." },
-    episode_opened: { points: 5, title: "Episode opened", description: "Opened an offline episode." },
-    episode_completed: { points: 25, title: "Episode completed", description: "Finished reading an episode." },
-    prediction_submitted: { points: 10, title: "Prediction submitted", description: "Made a story prediction." },
-    poll_voted: { points: 5, title: "Poll voted", description: "Voted in an Empire of Trust poll." },
+    episode_opened: { points: 10, title: "Read episode", description: "Opened and read an Empire of Trust episode." },
+    episode_completed: { points: 20, title: "Finished episode", description: "Completed an Empire of Trust episode." },
+    library_booklet_opened: { points: 5, title: "Read booklet", description: "Opened an independent Library booklet." },
+    library_booklet_completed: { points: 10, title: "Finished booklet", description: "Completed an independent Library booklet." },
+    prediction_submitted: { points: 3, title: "Story vote", description: "Submitted a future story influence vote." },
+    poll_voted: { points: 3, title: "Vote", description: "Voted in an Empire of Trust poll." },
+    story_vote_cast: { points: 3, title: "Story influence vote", description: "Voted on a future story direction." },
     interactive_link_clicked: { points: 2, title: "Interactive link", description: "Engaged with an interactive story link." },
-    quiz_completed: { points: 20, title: "Quiz completed", description: "Completed an episode quiz." },
+    quiz_completed: { points: 15, title: "Quiz pass", description: "Completed an episode quiz." },
+    daily_login: { points: 2, title: "Daily login", description: "Opened the app today." },
+    community_participation: { points: 5, title: "Community participation", description: "Took part in the reader community." },
+    invite_accepted: { points: 25, title: "Invite accepted", description: "A reader invitation was accepted." },
+    content_reviewed: { points: 5, title: "Content review", description: "Reviewed Empire of Trust content." },
   };
   const rule = rewardMap[log.eventType];
   if (rule) {
@@ -739,23 +1746,23 @@ async function applyRewardRules(log: ReaderActivityLog) {
   const quizAttempts = await readerDb.readerQuizAttempts.count();
   if (log.eventType === "episode_completed") {
     await addBadge({
-      id: `badge_${log.readerId}_gateway_reader`,
+      id: `badge_${log.readerId}_early_reader`,
       readerId: log.readerId,
-      badgeCode: "gateway_reader",
-      title: "Gateway Reader",
+      badgeCode: "early_reader",
+      title: "Early Reader",
       description: "Completed the first Empire of Trust episode.",
-      icon: "GR",
+      icon: "ER",
       earnedAt,
     });
   }
   if (completedEpisodeCount >= 3) {
     await addBadge({
-      id: `badge_${log.readerId}_empire_follower`,
+      id: `badge_${log.readerId}_episode_explorer`,
       readerId: log.readerId,
-      badgeCode: "empire_follower",
-      title: "Empire Follower",
+      badgeCode: "episode_explorer",
+      title: "Episode Explorer",
       description: "Completed three Empire of Trust episodes.",
-      icon: "EF",
+      icon: "EE",
       earnedAt,
     });
   }
@@ -763,10 +1770,10 @@ async function applyRewardRules(log: ReaderActivityLog) {
     await addBadge({
       id: `badge_${log.readerId}_boardroom_predictor`,
       readerId: log.readerId,
-      badgeCode: "boardroom_predictor",
-      title: "Boardroom Predictor",
-      description: "Submitted the first story prediction.",
-      icon: "BP",
+      badgeCode: "investor_mind",
+      title: "Investor Mind",
+      description: "Submitted the first story influence prediction.",
+      icon: "IM",
       earnedAt,
     });
   }
@@ -788,9 +1795,9 @@ async function applyRewardRules(log: ReaderActivityLog) {
       id: `badge_${log.readerId}_business_strategist`,
       readerId: log.readerId,
       badgeCode: "business_strategist",
-      title: "Corporate Strategist",
+      title: "Investor Mind",
       description: "Made a business decision in the story.",
-      icon: "CS",
+      icon: "IM",
       earnedAt,
     });
   }
@@ -818,6 +1825,27 @@ async function applyRewardRules(log: ReaderActivityLog) {
       earnedAt,
     });
   }
+  if (totalPoints >= 1000) {
+    await addBadge({
+      id: `badge_${log.readerId}_empire_builder`,
+      readerId: log.readerId,
+      badgeCode: "empire_builder",
+      title: "Empire Builder",
+      description: "Reached Empire Builder reputation through sustained participation.",
+      icon: "EB",
+      earnedAt,
+    });
+  }
+}
+
+export function getReaderLevel(points: number) {
+  if (points >= 2500) return "Legend";
+  if (points >= 1500) return "Empire Builder";
+  if (points >= 900) return "Investor";
+  if (points >= 500) return "Advisor";
+  if (points >= 250) return "Influencer";
+  if (points >= 75) return "Insider";
+  return "Citizen";
 }
 
 export function validateEpisodePack(input: unknown): EpisodePack {
@@ -862,21 +1890,32 @@ export function validateEpisodePack(input: unknown): EpisodePack {
         previousEpisodeId: episode.previousEpisodeId || "",
         nextEpisodeId: episode.nextEpisodeId || "",
         activeCharacters: episode.activeCharacters || "",
+        activeCharacterIds: episode.activeCharacterIds || [],
+        activeProperties: episode.activeProperties || [],
+        activeVehicles: episode.activeVehicles || [],
         businessContinuityNotes: episode.businessContinuityNotes || "",
+        propertyContinuityNotes: episode.propertyContinuityNotes || "",
+        locationContinuityNotes: episode.locationContinuityNotes || "",
+        vehicleContinuityNotes: episode.vehicleContinuityNotes || "",
         culturalContinuityNotes: episode.culturalContinuityNotes || "",
       },
     },
   } as EpisodePack;
 }
 
-export async function importPack(pack: EpisodePack) {
+export async function importPack(pack: EpisodePack, options: { replace?: boolean } = {}) {
   const reader = await getOrCreateReaderIdentity();
   const existing = await readerDb.episodePacks.get(pack.content.episode.id);
-  if (existing && compareVersions(pack.manifest.version, existing.manifest.version) <= 0) {
+  if (existing && !options.replace && compareEpisodePackVersions(pack.manifest.version, existing.manifest.version) <= 0) {
     throw new Error(`Version ${existing.manifest.version} is already imported. Import a newer pack version.`);
   }
   await readerDb.episodePacks.put(pack);
-  await logActivity("pack_imported", { episodeId: pack.content.episode.id, targetType: "episodePack", targetId: pack.manifest.packId, metadata: { version: pack.manifest.version } }, reader);
+  await logActivity("pack_imported", {
+    episodeId: pack.content.episode.id,
+    targetType: "episodePack",
+    targetId: pack.manifest.packId,
+    metadata: { version: pack.manifest.version, replaced: Boolean(existing) },
+  }, reader);
   return pack.content.episode.id;
 }
 
@@ -973,17 +2012,6 @@ export async function saveDramaParticipation(input: Omit<ReaderDramaParticipatio
   await readerDb.readerParticipation.put(participation);
   await enqueue("readerDramaParticipation", participation.id, participation as unknown as Record<string, unknown>, reader.readerId);
   return participation;
-}
-
-export function getReaderLevel(points: number) {
-  if (points >= 2000) return "Empire Insider";
-  if (points >= 1200) return "Board Member";
-  if (points >= 800) return "Shareholder";
-  if (points >= 500) return "Director";
-  if (points >= 300) return "Executive";
-  if (points >= 150) return "Advisor";
-  if (points >= 50) return "Analyst";
-  return "Reader";
 }
 
 export async function saveQuizAttempt(input: Omit<ReaderQuizAttempt, "id" | "readerId" | "completedAt" | "syncStatus"> & { title?: string }) {

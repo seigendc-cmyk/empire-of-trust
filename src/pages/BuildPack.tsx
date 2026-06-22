@@ -21,9 +21,19 @@ function ValidationPanel({ issues }: { issues: PackValidationIssue[] }) {
       {issues.length === 0 ? (
         <p className="mt-3 text-sm leading-6 text-paper/65">No critical errors or warnings detected.</p>
       ) : (
-        <div className="mt-4 grid gap-2">
-          {errors.map((issue) => <p key={issue.message} className="border border-ember bg-ember/10 p-3 text-sm text-paper">{issue.message}</p>)}
-          {warnings.map((issue) => <p key={issue.message} className="border border-signal bg-signal/10 p-3 text-sm text-paper">{issue.message}</p>)}
+        <div className="mt-4 grid gap-4">
+          {errors.length > 0 && (
+            <div className="grid gap-2">
+              <h3 className="text-sm font-black text-ember">Critical errors</h3>
+              {errors.map((issue) => <p key={issue.message} className="border border-ember bg-ember/10 p-3 text-sm text-paper">{issue.message}</p>)}
+            </div>
+          )}
+          {warnings.length > 0 && (
+            <div className="grid gap-2">
+              <h3 className="text-sm font-black text-signal">Warnings</h3>
+              {warnings.map((issue) => <p key={issue.message} className="border border-signal bg-signal/10 p-3 text-sm text-paper">{issue.message}</p>)}
+            </div>
+          )}
         </div>
       )}
     </section>
@@ -41,20 +51,39 @@ export default function BuildPack() {
 
   const issues = useMemo(() => (episode ? validateEpisodePackSource(episode, chapters, paragraphs) : []), [chapters, episode, paragraphs]);
   const hasCriticalErrors = issues.some((issue) => issue.level === "error");
+  const packFileName = pack ? `${pack.manifest.packId}-v${pack.manifest.version}.json` : `${episode?.episodeIdentifier || "episode"}-v${version}.json`;
 
-  async function handleBuild() {
-    if (!episode || hasCriticalErrors) return;
+  async function buildPack() {
+    if (!episode || hasCriticalErrors) return null;
     setBuilding(true);
     setBuildError("");
     setSaved(false);
     try {
       const nextPack = await buildEpisodePack(episode, chapters, paragraphs, { version });
       setPack(nextPack);
+      return nextPack;
     } catch (err) {
       setBuildError(err instanceof Error ? err.message : "Could not build pack.");
+      return null;
     } finally {
       setBuilding(false);
     }
+  }
+
+  async function handleBuild() {
+    await buildPack();
+  }
+
+  async function handleBuildAndDownload() {
+    const nextPack = await buildPack();
+    if (nextPack) downloadJson(`${nextPack.manifest.packId}-v${nextPack.manifest.version}.json`, nextPack);
+  }
+
+  async function handleBuildAndSaveMetadata() {
+    const nextPack = await buildPack();
+    if (!nextPack) return;
+    await savePackMetadata(nextPack.content.episode.id, nextPack);
+    setSaved(true);
   }
 
   useEffect(() => {
@@ -78,6 +107,7 @@ export default function BuildPack() {
         <div className="text-sm leading-6 text-paper/60">
           <p>Status: {episode.status}</p>
           <p>Build timestamp: {pack?.manifest.createdAt ? new Date(pack.manifest.createdAt).toLocaleString() : "Not built yet"}</p>
+          <p className="break-all">File name: {packFileName}</p>
         </div>
       </div>
 
@@ -85,11 +115,17 @@ export default function BuildPack() {
 
       {buildError && <div className="border border-ember bg-ember/10 p-3 text-sm font-semibold text-ember">{buildError}</div>}
 
-      <div className="panel sticky-actions grid gap-3 p-4 sm:grid-cols-4">
+      <div className="panel sticky-actions grid gap-3 p-4 sm:grid-cols-3 lg:grid-cols-5">
         <button className="btn btn-primary" onClick={handleBuild} disabled={building || hasCriticalErrors}>
           {building ? "Building..." : "Build Pack"}
         </button>
-        <button className="btn" disabled={!pack} onClick={() => pack && downloadJson(`${pack.manifest.packId}-v${pack.manifest.version}.json`, pack)}>
+        <button className="btn btn-primary" onClick={handleBuildAndDownload} disabled={building || hasCriticalErrors}>
+          Build + Download
+        </button>
+        <button className="btn" onClick={handleBuildAndSaveMetadata} disabled={building || hasCriticalErrors}>
+          Build + Save Metadata
+        </button>
+        <button className="btn" disabled={!pack} onClick={() => pack && downloadJson(packFileName, pack)}>
           Download JSON
         </button>
         <button className="btn" disabled={!pack} onClick={() => pack && navigator.clipboard.writeText(pack.manifest.packId)}>
@@ -106,12 +142,17 @@ export default function BuildPack() {
         >
           Save Metadata
         </button>
-        {saved && <p className="text-sm font-semibold text-ledger sm:col-span-4">Pack metadata saved to eotPacks for version {pack?.manifest.version}.</p>}
+        {saved && <p className="text-sm font-semibold text-ledger sm:col-span-3 lg:col-span-5">Pack metadata saved to eotPacks for version {pack?.manifest.version}.</p>}
       </div>
 
       {pack && (
-        <section className="panel p-4">
-          <h2 className="text-xl font-black">Manifest preview</h2>
+        <section className="panel grid gap-4 p-4">
+          <div>
+            <h2 className="text-xl font-black">Manifest preview</h2>
+            <p className="mt-2 break-all text-sm font-semibold text-paper/60">File: {packFileName}</p>
+            <p className="mt-1 break-all text-sm font-semibold text-paper/60">Checksum: {pack.manifest.checksum}</p>
+            <p className="mt-1 border border-signal bg-signal/10 p-3 text-sm font-semibold text-signal">Signature is a frontend placeholder. Replace it with a production signing process before treating packs as tamper-proof.</p>
+          </div>
           <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
             {Object.entries(pack.manifest).map(([key, value]) => (
               <div key={key} className="border border-white/10 bg-black/20 p-3">

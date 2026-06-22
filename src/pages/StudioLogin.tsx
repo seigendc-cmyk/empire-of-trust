@@ -3,8 +3,9 @@ import { ADMIN_EMAIL, firebaseConfigError, isFirebaseConfigured } from "../lib/f
 import { useAuth } from "../state/AuthContext";
 
 export default function StudioLogin() {
-  const { signIn, user, isAdmin, loading, error, clearError } = useAuth();
+  const { signIn, user, isAdmin, staff, defaultDashboardPath, loading, error, clearError } = useAuth();
   if (!loading && user && isAdmin) return <Navigate to="/studio" replace />;
+  if (!loading && user && staff?.active) return <Navigate to={defaultDashboardPath} replace />;
 
   return (
     <section className="page grid min-h-[calc(100dvh-8rem)] content-center">
@@ -23,7 +24,7 @@ export default function StudioLogin() {
             <button className="btn w-full" type="button" onClick={clearError}>Dismiss</button>
           </div>
         )}
-        {user && !isAdmin && <div className="mt-5 border border-ember bg-ember/15 p-3 text-sm">{user.email} is not authorized.</div>}
+        {user && !isAdmin && !staff?.active && <div className="mt-5 border border-ember bg-ember/15 p-3 text-sm">{user.email} is not authorized or is inactive.</div>}
         <button className="btn btn-primary mt-6 w-full" type="button" onClick={() => void signIn()} disabled={loading || !isFirebaseConfigured}>
           {loading ? "Checking Google..." : "Continue with Google"}
         </button>

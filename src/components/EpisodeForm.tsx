@@ -70,8 +70,32 @@ export function EpisodeForm({ episode, submitLabel, onSubmit }: Props) {
         <textarea className="field min-h-24" name="activeCharacters" defaultValue={episode?.activeCharacters ?? ""} placeholder="Names, roles, tensions, or JSON." />
       </label>
       <label className="sm:col-span-2">
+        <span className="label">Active character IDs</span>
+        <textarea className="field min-h-20" name="activeCharacterIds" defaultValue={episode?.activeCharacterIds?.join("\n") ?? ""} placeholder="One master character ID per line." />
+      </label>
+      <label className="sm:col-span-2">
+        <span className="label">Active property IDs</span>
+        <textarea className="field min-h-20" name="activeProperties" defaultValue={episode?.activeProperties?.join("\n") ?? ""} placeholder="One property ID per line." />
+      </label>
+      <label className="sm:col-span-2">
+        <span className="label">Active vehicle IDs</span>
+        <textarea className="field min-h-20" name="activeVehicles" defaultValue={episode?.activeVehicles?.join("\n") ?? ""} placeholder="One vehicle ID per line." />
+      </label>
+      <label className="sm:col-span-2">
         <span className="label">Business continuity notes</span>
         <textarea className="field min-h-24" name="businessContinuityNotes" defaultValue={episode?.businessContinuityNotes ?? ""} />
+      </label>
+      <label className="sm:col-span-2">
+        <span className="label">Property continuity notes</span>
+        <textarea className="field min-h-24" name="propertyContinuityNotes" defaultValue={episode?.propertyContinuityNotes ?? ""} />
+      </label>
+      <label className="sm:col-span-2">
+        <span className="label">Location continuity notes</span>
+        <textarea className="field min-h-24" name="locationContinuityNotes" defaultValue={episode?.locationContinuityNotes ?? ""} />
+      </label>
+      <label className="sm:col-span-2">
+        <span className="label">Vehicle continuity notes</span>
+        <textarea className="field min-h-24" name="vehicleContinuityNotes" defaultValue={episode?.vehicleContinuityNotes ?? ""} />
       </label>
       <label className="sm:col-span-2">
         <span className="label">Cultural continuity notes</span>

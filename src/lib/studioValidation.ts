@@ -14,7 +14,13 @@ export interface EpisodeInput {
   previousEpisodeId: string;
   nextEpisodeId: string;
   activeCharacters: string;
+  activeCharacterIds?: string[];
+  activeProperties?: string[];
+  activeVehicles?: string[];
   businessContinuityNotes: string;
+  propertyContinuityNotes?: string;
+  locationContinuityNotes?: string;
+  vehicleContinuityNotes?: string;
   culturalContinuityNotes: string;
 }
 
@@ -34,7 +40,13 @@ export function episodeInputFromForm(formData: FormData): EpisodeInput {
     previousEpisodeId: stringValue(formData, "previousEpisodeId").trim(),
     nextEpisodeId: stringValue(formData, "nextEpisodeId").trim(),
     activeCharacters: stringValue(formData, "activeCharacters").trim(),
+    activeCharacterIds: stringValue(formData, "activeCharacterIds").split(/[\n,;]+/).map((item) => item.trim()).filter(Boolean),
+    activeProperties: stringValue(formData, "activeProperties").split(/[\n,;]+/).map((item) => item.trim()).filter(Boolean),
+    activeVehicles: stringValue(formData, "activeVehicles").split(/[\n,;]+/).map((item) => item.trim()).filter(Boolean),
     businessContinuityNotes: stringValue(formData, "businessContinuityNotes").trim(),
+    propertyContinuityNotes: stringValue(formData, "propertyContinuityNotes").trim(),
+    locationContinuityNotes: stringValue(formData, "locationContinuityNotes").trim(),
+    vehicleContinuityNotes: stringValue(formData, "vehicleContinuityNotes").trim(),
     culturalContinuityNotes: stringValue(formData, "culturalContinuityNotes").trim(),
   };
 }

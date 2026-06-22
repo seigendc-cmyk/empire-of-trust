@@ -8,12 +8,25 @@ import {
   type User,
 } from "firebase/auth";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { ADMIN_EMAIL, auth, googleProvider, isFirebaseConfigured } from "../lib/firebase";
+import { auth, googleProvider, isFirebaseConfigured } from "../lib/firebase";
+import {
+  defaultStaffDashboard,
+  getStudioStaff,
+  hasStudioPermission,
+  isSuperAdminEmail,
+  logStudioAudit,
+  type StudioPermission,
+  type StudioStaff,
+} from "../lib/staffPermissions";
 
 interface AuthState {
   user: User | null;
   loading: boolean;
   isAdmin: boolean;
+  staff: StudioStaff | null;
+  staffLoading: boolean;
+  hasPermission: (permission: StudioPermission) => boolean;
+  defaultDashboardPath: string;
   error: string;
   signIn: () => Promise<void>;
   clearError: () => void;
@@ -24,6 +37,8 @@ const AuthContext = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [staff, setStaff] = useState<StudioStaff | null>(null);
+  const [staffLoading, setStaffLoading] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -44,11 +59,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    async function loadStaff() {
+      if (!user?.email) {
+        setStaff(null);
+        setStaffLoading(false);
+        return;
+      }
+      setStaffLoading(true);
+      try {
+        const nextStaff = await getStudioStaff(user.email);
+        if (cancelled) return;
+        setStaff(nextStaff);
+        if (nextStaff?.active) {
+          logStudioAudit(user.email, "staff login", "studioStaff", nextStaff.email, { role: nextStaff.role }).catch(() => undefined);
+        }
+      } catch (nextError) {
+        if (!cancelled) setError(authErrorMessage(nextError));
+      } finally {
+        if (!cancelled) setStaffLoading(false);
+      }
+    }
+    loadStaff();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.email]);
+
   const value = useMemo<AuthState>(
     () => ({
       user,
-      loading,
-      isAdmin: normalizeEmail(user?.email) === normalizeEmail(ADMIN_EMAIL),
+      loading: loading || staffLoading,
+      isAdmin: isSuperAdminEmail(user?.email),
+      staff,
+      staffLoading,
+      hasPermission: (permission: StudioPermission) => hasStudioPermission(staff, permission),
+      defaultDashboardPath: isSuperAdminEmail(user?.email) ? "/studio" : defaultStaffDashboard(staff),
       error,
       clearError: () => setError(""),
       signIn: async () => {
@@ -68,7 +115,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       },
     }),
-    [error, loading, user],
+    [error, loading, staff, staffLoading, user],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -78,10 +125,6 @@ export function useAuth() {
   const context = useContext(AuthContext);
   if (!context) throw new Error("useAuth must be used inside AuthProvider");
   return context;
-}
-
-function normalizeEmail(email: string | null | undefined) {
-  return (email ?? "").trim().toLowerCase();
 }
 
 function shouldUseRedirect(error: unknown) {

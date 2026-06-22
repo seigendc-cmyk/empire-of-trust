@@ -31,6 +31,10 @@ export function EpisodeForm({ episode, submitLabel, onSubmit }: Props) {
         <span className="label">Identifier</span>
         <input className="field" name="episodeIdentifier" defaultValue={episode?.episodeIdentifier ?? "S01E01"} />
       </label>
+      <label>
+        <span className="label">Episode code</span>
+        <input className="field" name="episodeCode" defaultValue={episode?.episodeCode ?? ""} placeholder="EOT-S01-E01" />
+      </label>
       <label className="sm:col-span-2">
         <span className="label">Title</span>
         <input className="field" name="title" required defaultValue={episode?.title ?? ""} />
@@ -38,6 +42,26 @@ export function EpisodeForm({ episode, submitLabel, onSubmit }: Props) {
       <label className="sm:col-span-2">
         <span className="label">Synopsis</span>
         <textarea className="field min-h-28" name="synopsis" defaultValue={episode?.synopsis ?? ""} />
+      </label>
+      <label>
+        <span className="label">Intro title</span>
+        <input className="field" name="introTitle" defaultValue={episode?.introTitle ?? ""} placeholder="Tonight in Harare..." />
+      </label>
+      <label>
+        <span className="label">Setting date</span>
+        <input className="field" name="settingDate" defaultValue={episode?.settingDate ?? episode?.storyDate ?? ""} placeholder="June 2027" />
+      </label>
+      <label className="sm:col-span-2">
+        <span className="label">Dramatic intro narrative</span>
+        <textarea className="field min-h-28" name="introNarrative" defaultValue={episode?.introNarrative ?? ""} />
+      </label>
+      <label className="sm:col-span-2">
+        <span className="label">Previous episode continuity bridge</span>
+        <textarea className="field min-h-24" name="previousEpisodeBridge" defaultValue={episode?.previousEpisodeBridge ?? ""} />
+      </label>
+      <label className="sm:col-span-2">
+        <span className="label">Main conflict</span>
+        <textarea className="field min-h-24" name="mainConflict" defaultValue={episode?.mainConflict ?? ""} />
       </label>
       <label>
         <span className="label">Story date</span>
@@ -100,6 +124,14 @@ export function EpisodeForm({ episode, submitLabel, onSubmit }: Props) {
       <label className="sm:col-span-2">
         <span className="label">Cultural continuity notes</span>
         <textarea className="field min-h-24" name="culturalContinuityNotes" defaultValue={episode?.culturalContinuityNotes ?? ""} />
+      </label>
+      <label className="sm:col-span-2">
+        <span className="label">Episode ending hook</span>
+        <textarea className="field min-h-24" name="endingHook" defaultValue={episode?.endingHook ?? ""} />
+      </label>
+      <label className="sm:col-span-2">
+        <span className="label">Next episode bridge</span>
+        <textarea className="field min-h-24" name="nextEpisodeBridge" defaultValue={episode?.nextEpisodeBridge ?? ""} />
       </label>
       <div className="sticky-actions sm:col-span-2">
         <button className="btn btn-primary w-full" type="submit">

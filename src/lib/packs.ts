@@ -1,4 +1,5 @@
 import type { Chapter, Episode, EpisodePack, Paragraph } from "../types";
+import { buildContinuityPrep, commerceRuleWarnings, episodeAssetPath, paragraphImageSlots, splitNotes } from "./episodeBuildLogic";
 
 export interface PackValidationIssue {
   level: "error" | "warning";
@@ -22,7 +23,11 @@ export function validateEpisodePackSource(episode: Episode, chapters: Chapter[],
   const issues: PackValidationIssue[] = [];
   if (!episode.title.trim()) issues.push({ level: "error", message: "Episode must have a title." });
   if (!episode.episodeIdentifier.trim()) issues.push({ level: "error", message: "Episode must have an episodeIdentifier." });
+  if (!episode.introNarrative?.trim()) issues.push({ level: "warning", message: "Episode is missing dramatic intro narrative." });
+  if (!episode.previousEpisodeBridge?.trim()) issues.push({ level: "warning", message: "Episode is missing previous episode continuity bridge." });
+  if (!episode.endingHook?.trim()) issues.push({ level: "warning", message: "Episode should end with a forward momentum hook." });
   if (chapters.length === 0) issues.push({ level: "error", message: "Episode must have at least one chapter." });
+  commerceRuleWarnings(episode, paragraphs).forEach((message) => issues.push({ level: "warning", message }));
 
   chapters.forEach((chapter) => {
     const chapterParagraphs = paragraphs.filter((paragraph) => paragraph.chapterId === chapter.id);
@@ -49,6 +54,7 @@ export async function buildEpisodePack(episode: Episode, chapters: Chapter[], pa
   const fallbackIdentifier = `S${String(episode.seasonNumber).padStart(2, "0")}E${String(episode.episodeNumber).padStart(2, "0")}`;
   const episodeIdentifier = episode.episodeIdentifier || fallbackIdentifier;
   const createdAt = new Date().toISOString();
+  const continuityPrep = buildContinuityPrep(episode, chapters, paragraphs);
 
   const content: EpisodePack["content"] = {
     episode: {
@@ -59,7 +65,15 @@ export async function buildEpisodePack(episode: Episode, chapters: Chapter[], pa
       episodeNumber: episode.episodeNumber,
       releaseWeekNumber: episode.releaseWeekNumber,
       episodeIdentifier,
+      episodeCode: episode.episodeCode || episodeIdentifier,
       storyDate: episode.storyDate,
+      settingDate: episode.settingDate || episode.storyDate,
+      introTitle: episode.introTitle || episode.title,
+      introNarrative: episode.introNarrative || episode.synopsis,
+      previousEpisodeBridge: episode.previousEpisodeBridge || episode.previousEpisodeId || "",
+      mainConflict: episode.mainConflict || episode.synopsis,
+      endingHook: episode.endingHook || "",
+      nextEpisodeBridgeText: episode.nextEpisodeBridge || episode.nextEpisodeId || "",
       status: episode.status,
       requiredLicencePlan: episode.requiredLicencePlan || "reader",
       previousEpisodeId: episode.previousEpisodeId || "",
@@ -69,7 +83,21 @@ export async function buildEpisodePack(episode: Episode, chapters: Chapter[], pa
       activeProperties: episode.activeProperties || [],
       activeVehicles: episode.activeVehicles || [],
       businessContinuityNotes: episode.businessContinuityNotes || "",
+      businessNotes: splitNotes(episode.businessContinuityNotes),
       culturalContinuityNotes: episode.culturalContinuityNotes || "",
+      culturalNotes: splitNotes(episode.culturalContinuityNotes),
+      continuityPrep,
+      imageSlots: [
+        {
+          id: `${episode.id}-hero`,
+          imageType: "scene",
+          firebaseStoragePath: episodeAssetPath(episode, "hero"),
+          fallbackImagePath: "/eot/placeholders/scene_placeholder.webp",
+          imagePrompt: episode.introNarrative || episode.synopsis,
+          altText: `${episode.title} hero image`,
+          displayMode: "hero",
+        },
+      ],
       propertyContinuityNotes: episode.propertyContinuityNotes || "",
       locationContinuityNotes: episode.locationContinuityNotes || "",
       vehicleContinuityNotes: episode.vehicleContinuityNotes || "",
@@ -82,6 +110,7 @@ export async function buildEpisodePack(episode: Episode, chapters: Chapter[], pa
           title: chapter.title,
           intro: chapter.intro,
           previousEpisodeBridge: chapter.previousEpisodeBridge,
+          previousSceneReview: chapter.previousSceneReview || chapter.previousEpisodeBridge,
           emotionalTone: chapter.emotionalTone,
           sceneLocation: chapter.sceneLocation,
           scenePropertyId: chapter.scenePropertyId || "",
@@ -95,14 +124,19 @@ export async function buildEpisodePack(episode: Episode, chapters: Chapter[], pa
               id: paragraph.id,
               paragraphNumber: paragraph.paragraphNumber,
               body: paragraph.body,
+              narrativeText: paragraph.narrativeText || paragraph.body,
               dialogue: parseJsonList(paragraph.dialogueJson),
+              dialogueCues: paragraph.dialogueCues || parseJsonList(paragraph.dialogueJson).map((item) => typeof item === "string" ? item : JSON.stringify(item)),
               imagePrompt: paragraph.imagePrompt,
               scenePrompt: paragraph.scenePrompt,
               cameraDirection: paragraph.cameraDirection,
+              cinematicDirection: paragraph.cinematicDirection || paragraph.cameraDirection,
               emotionalTone: paragraph.emotionalTone,
               culturalDetail: paragraph.culturalDetail,
+              culturalContinuityNote: paragraph.culturalContinuityNote || paragraph.culturalDetail,
               businessContinuityNote: paragraph.businessContinuityNote,
               interactiveLinks: parseJsonList(paragraph.interactiveLinksJson),
+              imageSlots: paragraphImageSlots(episode, chapter, paragraph),
               mentionedCharacterIds: paragraph.mentionedCharacterIds || [],
               mentionedProperties: paragraph.mentionedProperties || [],
               propertyInteractionPrompt: paragraph.propertyInteractionPrompt || "",

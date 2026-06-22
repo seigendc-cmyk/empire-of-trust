@@ -4,11 +4,13 @@ import { Layout } from "./components/Layout";
 import { AuthProvider, useAuth } from "./state/AuthContext";
 import { LoadingState } from "./components/States";
 import { FirebaseConfigError } from "./components/FirebaseConfigError";
+import { BusinessSpotlightModal } from "./components/BusinessSpotlightModal";
 import { firebaseConfigError, isFirebaseConfigured } from "./lib/firebase";
-import { getOrCreateReaderIdentity, logActivity } from "./lib/offlineDb";
+import { getOrCreateReaderIdentity, logActivity, syncPendingReaderData } from "./lib/offlineDb";
 import { logStudioAudit, type StudioPermission } from "./lib/staffPermissions";
 
 const Home = lazy(() => import("./pages/Home"));
+const HomeDashboard = lazy(() => import("./pages/HomeDashboard"));
 const StudioLogin = lazy(() => import("./pages/StudioLogin"));
 const StudioHome = lazy(() => import("./pages/StudioHome"));
 const EpisodesList = lazy(() => import("./pages/EpisodesList"));
@@ -34,9 +36,12 @@ const CorporateNetwork = lazy(() => import("./pages/CorporateNetwork"));
 const MallHome = lazy(() => import("./pages/MallHome"));
 const MallVendors = lazy(() => import("./pages/MallVendors"));
 const MallVendorDetail = lazy(() => import("./pages/MallVendorDetail"));
+const MallProducts = lazy(() => import("./pages/MallProducts"));
 const MallProductDetail = lazy(() => import("./pages/MallProductDetail"));
+const MallCategories = lazy(() => import("./pages/MallCategories"));
 const MallCategory = lazy(() => import("./pages/MallCategory"));
 const MallSearch = lazy(() => import("./pages/MallSearch"));
+const MallImportVendorPack = lazy(() => import("./pages/MallImportVendorPack"));
 const LicenceHome = lazy(() => import("./pages/LicenceHome"));
 const LicenceActivate = lazy(() => import("./pages/LicenceActivate"));
 const LicenceStatus = lazy(() => import("./pages/LicenceStatus"));
@@ -65,15 +70,26 @@ const StudioStaffForm = lazy(() => import("./pages/StudioStaffForm"));
 const LibraryCatalogue = lazy(() => import("./pages/LibraryCatalogue"));
 const LibraryImport = lazy(() => import("./pages/LibraryImport"));
 const LibraryBooklet = lazy(() => import("./pages/LibraryBooklet"));
+const LibraryChapter = lazy(() => import("./pages/LibraryChapter"));
 const LibraryRead = lazy(() => import("./pages/LibraryRead"));
+const LibraryQuiz = lazy(() => import("./pages/LibraryQuiz"));
+const LibraryProgress = lazy(() => import("./pages/LibraryProgress"));
 const LibraryCategories = lazy(() => import("./pages/LibraryCategories"));
 const StudioLibraryList = lazy(() => import("./pages/StudioLibraryList"));
 const StudioLibraryForm = lazy(() => import("./pages/StudioLibraryForm"));
 const StudioLibraryPreview = lazy(() => import("./pages/StudioLibraryPreview"));
 const StudioLibraryBuildPack = lazy(() => import("./pages/StudioLibraryBuildPack"));
+const StudioBooklets = lazy(() => import("./pages/StudioBooklets"));
+const StudioBookletManuscriptImport = lazy(() => import("./pages/StudioBookletManuscriptImport"));
+const StudioBookletCoverBuilder = lazy(() => import("./pages/StudioBookletCoverBuilder"));
+const StudioBookletMediaBuilder = lazy(() => import("./pages/StudioBookletMediaBuilder"));
+const StudioBookletBuildPack = lazy(() => import("./pages/StudioBookletBuildPack"));
+const StudioBookletQuizBuilder = lazy(() => import("./pages/StudioBookletQuizBuilder"));
+const StudioBookletEngagementBuilder = lazy(() => import("./pages/StudioBookletEngagementBuilder"));
 const Participation = lazy(() => import("./pages/Participation"));
 const StudioCommunity = lazy(() => import("./pages/StudioCommunity"));
 const CharacterDirectory = lazy(() => import("./pages/CharacterDirectory"));
+const MeetCharacters = lazy(() => import("./pages/MeetCharacters"));
 const CharacterForm = lazy(() => import("./pages/CharacterForm"));
 const CharacterProfile = lazy(() => import("./pages/CharacterProfile"));
 const CharacterRelationships = lazy(() => import("./pages/CharacterRelationships"));
@@ -100,6 +116,12 @@ const AssetLibrary = lazy(() => import("./pages/AssetLibrary"));
 const AssetForm = lazy(() => import("./pages/AssetForm"));
 const AssetDetail = lazy(() => import("./pages/AssetDetail"));
 const AssetPrompts = lazy(() => import("./pages/AssetPrompts"));
+const StudioCommerce = lazy(() => import("./pages/StudioCommerce"));
+const StudioCommerceForm = lazy(() => import("./pages/StudioCommerceForm"));
+const StudioVendorPack = lazy(() => import("./pages/StudioVendorPack"));
+const ExecutiveAnalytics = lazy(() => import("./pages/ExecutiveAnalytics"));
+const AdvertisingDesk = lazy(() => import("./pages/AdvertisingDesk"));
+const VendorAdvertisingDashboard = lazy(() => import("./pages/VendorAdvertisingDashboard"));
 
 function AccessDenied({ permission }: { permission?: StudioPermission }) {
   return (
@@ -132,18 +154,26 @@ export default function App() {
     getOrCreateReaderIdentity()
       .then((identity) => {
         logActivity("app_opened", { metadata: { path: window.location.pathname } }, identity).catch(() => undefined);
+        syncPendingReaderData().catch(() => undefined);
         import("./lib/communityRepository").then(({ recordDailyLogin }) => recordDailyLogin()).catch(() => undefined);
       })
       .catch(() => undefined);
+    const syncOnline = () => {
+      syncPendingReaderData().catch(() => undefined);
+    };
+    window.addEventListener("online", syncOnline);
+    return () => window.removeEventListener("online", syncOnline);
   }, []);
 
   return (
     <AuthProvider>
       <Layout>
         {!isFirebaseConfigured && <FirebaseConfigError message={`${firebaseConfigError} Episode builder is running in local draft mode.`} />}
+        <BusinessSpotlightModal />
         <Suspense fallback={<LoadingState label="Loading workspace..." />}>
           <Routes>
             <Route path="/" element={<Home />} />
+            <Route path="/home" element={<HomeDashboard />} />
             <Route path="/studio/login" element={<StudioLogin />} />
             <Route path="/staff" element={<Navigate to="/staff/dashboard" replace />} />
             <Route path="/staff/dashboard" element={<PermissionRoute permission="studio.access"><StaffDashboard /></PermissionRoute>} />
@@ -155,7 +185,7 @@ export default function App() {
             <Route path="/staff/assets" element={<PermissionRoute permission="assets.read"><StaffModulePage module="assets" /></PermissionRoute>} />
             <Route path="/staff/story" element={<PermissionRoute permission="story.read"><StaffModulePage module="story" /></PermissionRoute>} />
             <Route path="/staff/production" element={<PermissionRoute permission="production.read"><StaffModulePage module="production" /></PermissionRoute>} />
-            <Route path="/staff/analytics" element={<PermissionRoute permission="console.analytics.read"><StaffModulePage module="analytics" /></PermissionRoute>} />
+            <Route path="/staff/analytics" element={<PermissionRoute permission="analytics.read"><StaffModulePage module="analytics" /></PermissionRoute>} />
             <Route path="/staff/library" element={<PermissionRoute permission="library.read"><StaffModulePage module="library" /></PermissionRoute>} />
             <Route path="/studio" element={<PermissionRoute permission="staff.manage" allowLocalDraft><StudioHome /></PermissionRoute>} />
             <Route path="/studio/staff" element={<PermissionRoute permission="staff.manage"><StudioStaffList /></PermissionRoute>} />
@@ -173,6 +203,20 @@ export default function App() {
             <Route path="/studio/library/:bookletId/edit" element={<PermissionRoute permission="library.write" allowLocalDraft><StudioLibraryForm /></PermissionRoute>} />
             <Route path="/studio/library/:bookletId/preview" element={<PermissionRoute permission="library.read" allowLocalDraft><StudioLibraryPreview /></PermissionRoute>} />
             <Route path="/studio/library/:bookletId/build-pack" element={<PermissionRoute permission="library.write" allowLocalDraft><StudioLibraryBuildPack /></PermissionRoute>} />
+            <Route path="/studio/booklets" element={<PermissionRoute permission="library.read" allowLocalDraft><StudioBooklets /></PermissionRoute>} />
+            <Route path="/studio/booklets/new" element={<PermissionRoute permission="library.write" allowLocalDraft><StudioBooklets mode="form" /></PermissionRoute>} />
+            <Route path="/studio/booklets/:bookletId" element={<PermissionRoute permission="library.read" allowLocalDraft><StudioBooklets mode="detail" /></PermissionRoute>} />
+            <Route path="/studio/booklets/:bookletId/edit" element={<PermissionRoute permission="library.write" allowLocalDraft><StudioBooklets mode="form" /></PermissionRoute>} />
+            <Route path="/studio/booklets/:bookletId/cover" element={<PermissionRoute permission="library.write" allowLocalDraft><StudioBookletCoverBuilder /></PermissionRoute>} />
+            <Route path="/studio/booklets/:bookletId/import-manuscript" element={<PermissionRoute permission="library.write" allowLocalDraft><StudioBookletManuscriptImport /></PermissionRoute>} />
+            <Route path="/studio/booklets/:bookletId/manuscript" element={<PermissionRoute permission="library.write" allowLocalDraft><StudioBookletManuscriptImport /></PermissionRoute>} />
+            <Route path="/studio/booklets/:bookletId/chapters" element={<PermissionRoute permission="library.write" allowLocalDraft><StudioBooklets mode="detail" /></PermissionRoute>} />
+            <Route path="/studio/booklets/:bookletId/media" element={<PermissionRoute permission="library.write" allowLocalDraft><StudioBookletMediaBuilder /></PermissionRoute>} />
+            <Route path="/studio/booklets/:bookletId/quizzes" element={<PermissionRoute permission="library.write" allowLocalDraft><StudioBookletQuizBuilder /></PermissionRoute>} />
+            <Route path="/studio/booklets/:bookletId/engagement" element={<PermissionRoute permission="library.write" allowLocalDraft><StudioBookletEngagementBuilder /></PermissionRoute>} />
+            <Route path="/studio/booklets/:bookletId/whatsapp" element={<PermissionRoute permission="library.write" allowLocalDraft><StudioBookletEngagementBuilder /></PermissionRoute>} />
+            <Route path="/studio/booklets/:bookletId/preview" element={<PermissionRoute permission="library.read" allowLocalDraft><StudioBooklets mode="detail" /></PermissionRoute>} />
+            <Route path="/studio/booklets/:bookletId/build-pack" element={<PermissionRoute permission="library.write" allowLocalDraft><StudioBookletBuildPack /></PermissionRoute>} />
             <Route path="/studio/community" element={<PermissionRoute permission="reader.analytics.read"><StudioCommunity /></PermissionRoute>} />
             <Route path="/reader" element={<ReaderHome />} />
             <Route path="/reader/import" element={<ReaderImport />} />
@@ -188,6 +232,9 @@ export default function App() {
             <Route path="/library/import" element={<LibraryImport />} />
             <Route path="/library/categories" element={<LibraryCategories />} />
             <Route path="/library/:bookletId" element={<LibraryBooklet />} />
+            <Route path="/library/:bookletId/chapter/:chapterId" element={<LibraryChapter />} />
+            <Route path="/library/:bookletId/quiz/:quizId" element={<LibraryQuiz />} />
+            <Route path="/library/:bookletId/progress" element={<LibraryProgress />} />
             <Route path="/library/:bookletId/chapter/:chapterId/section/:sectionId" element={<LibraryRead />} />
             <Route path="/participation" element={<Participation />} />
             <Route path="/participation/profile" element={<Participation view="profile" />} />
@@ -196,6 +243,14 @@ export default function App() {
             <Route path="/participation/rankings" element={<Participation view="rankings" />} />
             <Route path="/participation/history" element={<Participation view="history" />} />
             <Route path="/packs" element={<Packs />} />
+            <Route path="/packs/import" element={<Packs view="import" />} />
+            <Route path="/packs/installed" element={<Packs view="installed" />} />
+            <Route path="/packs/catalogue" element={<Packs view="catalogue" />} />
+            <Route path="/packs/:packId" element={<Packs view="detail" />} />
+            <Route path="/studio/packs" element={<PermissionRoute permission="packs.build" allowLocalDraft><Packs view="studioCatalogue" /></PermissionRoute>} />
+            <Route path="/studio/packs/catalogue" element={<PermissionRoute permission="packs.build" allowLocalDraft><Packs view="studioCatalogue" /></PermissionRoute>} />
+            <Route path="/studio/packs/publish" element={<PermissionRoute permission="packs.publish" allowLocalDraft><Packs view="studioPublish" /></PermissionRoute>} />
+            <Route path="/studio/packs/history" element={<PermissionRoute permission="packs.build" allowLocalDraft><Packs view="studioHistory" /></PermissionRoute>} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/licence" element={<LicenceHome />} />
             <Route path="/licence/activate" element={<LicenceActivate />} />
@@ -204,10 +259,15 @@ export default function App() {
             <Route path="/mall" element={<MallHome />} />
             <Route path="/mall/vendors" element={<MallVendors />} />
             <Route path="/mall/vendors/:vendorId" element={<MallVendorDetail />} />
+            <Route path="/mall/products" element={<MallProducts />} />
             <Route path="/mall/products/:productId" element={<MallProductDetail />} />
+            <Route path="/mall/categories" element={<MallCategories />} />
             <Route path="/mall/categories/:categoryId" element={<MallCategory />} />
             <Route path="/mall/search" element={<MallSearch />} />
+            <Route path="/mall/import-vendor-pack" element={<MallImportVendorPack />} />
+            <Route path="/vendor/advertising" element={<VendorAdvertisingDashboard />} />
             <Route path="/universe/search" element={<UniverseList kind="search" />} />
+            <Route path="/characters/meet" element={<MeetCharacters />} />
             <Route path="/characters" element={<CharacterDirectory />} />
             <Route path="/characters/new" element={<PermissionRoute permission="story.write" allowLocalDraft><CharacterForm /></PermissionRoute>} />
             <Route path="/characters/relationships" element={<CharacterRelationships />} />
@@ -298,6 +358,39 @@ export default function App() {
             <Route path="/studio/assets/marketing" element={<PermissionRoute permission="assets.read" allowLocalDraft><AssetLibrary view="marketing" /></PermissionRoute>} />
             <Route path="/studio/assets/:assetId" element={<PermissionRoute permission="assets.read" allowLocalDraft><AssetDetail /></PermissionRoute>} />
             <Route path="/studio/assets/:assetId/edit" element={<PermissionRoute permission="assets.write" allowLocalDraft><AssetForm /></PermissionRoute>} />
+            <Route path="/studio/commerce" element={<PermissionRoute permission="commerce.read" allowLocalDraft><StudioCommerce /></PermissionRoute>} />
+            <Route path="/studio/commerce/vendors" element={<PermissionRoute permission="commerce.vendor.manage" allowLocalDraft><StudioCommerce view="vendors" /></PermissionRoute>} />
+            <Route path="/studio/commerce/vendors/new" element={<PermissionRoute permission="commerce.vendor.manage" allowLocalDraft><StudioCommerceForm kind="vendor" /></PermissionRoute>} />
+            <Route path="/studio/commerce/vendors/:vendorId/edit" element={<PermissionRoute permission="commerce.vendor.manage" allowLocalDraft><StudioCommerceForm kind="vendor" /></PermissionRoute>} />
+            <Route path="/studio/commerce/products" element={<PermissionRoute permission="commerce.product.manage" allowLocalDraft><StudioCommerce view="products" /></PermissionRoute>} />
+            <Route path="/studio/commerce/products/new" element={<PermissionRoute permission="commerce.product.manage" allowLocalDraft><StudioCommerceForm kind="product" /></PermissionRoute>} />
+            <Route path="/studio/commerce/products/:productId/edit" element={<PermissionRoute permission="commerce.product.manage" allowLocalDraft><StudioCommerceForm kind="product" /></PermissionRoute>} />
+            <Route path="/studio/commerce/vendor-packs" element={<PermissionRoute permission="commerce.pack.build" allowLocalDraft><StudioCommerce view="vendorPacks" /></PermissionRoute>} />
+            <Route path="/studio/commerce/vendor-packs/:packId" element={<PermissionRoute permission="commerce.pack.build" allowLocalDraft><StudioVendorPack mode="detail" /></PermissionRoute>} />
+            <Route path="/studio/commerce/build-vendor-pack" element={<PermissionRoute permission="commerce.pack.build" allowLocalDraft><StudioVendorPack /></PermissionRoute>} />
+            <Route path="/studio/advertising" element={<PermissionRoute permission="advertising.manage" allowLocalDraft><AdvertisingDesk /></PermissionRoute>} />
+            <Route path="/studio/advertising/new" element={<PermissionRoute permission="advertising.manage" allowLocalDraft><AdvertisingDesk view="new" /></PermissionRoute>} />
+            <Route path="/studio/advertising/analytics" element={<PermissionRoute permission="advertising.analytics.read" allowLocalDraft><AdvertisingDesk view="analytics" /></PermissionRoute>} />
+            <Route path="/studio/advertising/:campaignId/edit" element={<PermissionRoute permission="advertising.manage" allowLocalDraft><AdvertisingDesk /></PermissionRoute>} />
+            <Route path="/studio/analytics" element={<PermissionRoute permission="analytics.read" allowLocalDraft><ExecutiveAnalytics /></PermissionRoute>} />
+            <Route path="/studio/analytics/overview" element={<PermissionRoute permission="analytics.read" allowLocalDraft><ExecutiveAnalytics /></PermissionRoute>} />
+            <Route path="/studio/analytics/readers" element={<PermissionRoute permission="analytics.read" allowLocalDraft><ExecutiveAnalytics view="readers" /></PermissionRoute>} />
+            <Route path="/studio/analytics/episodes" element={<PermissionRoute permission="analytics.read" allowLocalDraft><ExecutiveAnalytics view="episodes" /></PermissionRoute>} />
+            <Route path="/studio/analytics/library" element={<PermissionRoute permission="analytics.read" allowLocalDraft><ExecutiveAnalytics view="library" /></PermissionRoute>} />
+            <Route path="/studio/analytics/packs" element={<PermissionRoute permission="analytics.read" allowLocalDraft><ExecutiveAnalytics view="packs" /></PermissionRoute>} />
+            <Route path="/studio/analytics/participation" element={<PermissionRoute permission="analytics.read" allowLocalDraft><ExecutiveAnalytics view="participation" /></PermissionRoute>} />
+            <Route path="/studio/analytics/quizzes" element={<PermissionRoute permission="analytics.read" allowLocalDraft><ExecutiveAnalytics view="quizzes" /></PermissionRoute>} />
+            <Route path="/studio/analytics/predictions" element={<PermissionRoute permission="analytics.read" allowLocalDraft><ExecutiveAnalytics view="predictions" /></PermissionRoute>} />
+            <Route path="/studio/analytics/licensing" element={<PermissionRoute permission="analytics.licensing.read" allowLocalDraft><ExecutiveAnalytics view="licensing" /></PermissionRoute>} />
+            <Route path="/studio/analytics/agents" element={<PermissionRoute permission="analytics.read" allowLocalDraft><ExecutiveAnalytics view="agents" /></PermissionRoute>} />
+            <Route path="/studio/analytics/businesses" element={<PermissionRoute permission="analytics.read" allowLocalDraft><ExecutiveAnalytics view="businesses" /></PermissionRoute>} />
+            <Route path="/studio/analytics/properties" element={<PermissionRoute permission="analytics.read" allowLocalDraft><ExecutiveAnalytics view="properties" /></PermissionRoute>} />
+            <Route path="/studio/analytics/vehicles" element={<PermissionRoute permission="analytics.read" allowLocalDraft><ExecutiveAnalytics view="vehicles" /></PermissionRoute>} />
+            <Route path="/studio/analytics/actors" element={<PermissionRoute permission="analytics.read" allowLocalDraft><ExecutiveAnalytics view="actors" /></PermissionRoute>} />
+            <Route path="/studio/analytics/production" element={<PermissionRoute permission="analytics.production.read" allowLocalDraft><ExecutiveAnalytics view="production" /></PermissionRoute>} />
+            <Route path="/studio/analytics/assets" element={<PermissionRoute permission="analytics.read" allowLocalDraft><ExecutiveAnalytics view="assets" /></PermissionRoute>} />
+            <Route path="/studio/analytics/commerce" element={<PermissionRoute permission="analytics.commerce.read" allowLocalDraft><ExecutiveAnalytics view="commerce" /></PermissionRoute>} />
+            <Route path="/studio/analytics/staff" element={<PermissionRoute permission="analytics.staff.read" allowLocalDraft><ExecutiveAnalytics view="staff" /></PermissionRoute>} />
             <Route path="/studio/licensing" element={<PermissionRoute permission="licensing.write"><StudioLicensing /></PermissionRoute>} />
             <Route path="/studio/agents" element={<PermissionRoute permission="agents.manage"><StudioAgents /></PermissionRoute>} />
             <Route path="/studio/scratch-cards" element={<PermissionRoute permission="scratchcards.manage"><StudioScratchCards /></PermissionRoute>} />

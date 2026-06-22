@@ -49,6 +49,19 @@ export default function CharacterForm() {
         <Field name="language" label="Language" value={character?.language ?? ""} />
         <Field name="occupation" label="Occupation" value={character?.occupation ?? ""} />
         <Field name="role" label="Role" value={character?.role ?? ""} />
+        <Field name="archetype" label="Archetype" value={character?.archetype ?? ""} />
+        <Field name="position" label="Position" value={character?.position ?? ""} />
+        <Field name="displayOrder" label="Display order" value={String(character?.displayOrder ?? 999)} type="number" />
+        <div className="grid gap-2 border border-white/10 bg-black/20 p-3">
+          <label className="flex min-h-10 items-center justify-between gap-3 text-sm font-semibold">
+            Public character
+            <input name="isPublic" type="checkbox" defaultChecked={character?.isPublic !== false} />
+          </label>
+          <label className="flex min-h-10 items-center justify-between gap-3 text-sm font-semibold">
+            Enabled
+            <input name="enabled" type="checkbox" defaultChecked={character?.enabled !== false} />
+          </label>
+        </div>
         <Area name="physicalDescription" label="Physical description" value={character?.physicalDescription ?? ""} />
         <Field name="height" label="Height" value={character?.height ?? ""} />
         <Field name="build" label="Build" value={character?.build ?? ""} />
@@ -56,7 +69,10 @@ export default function CharacterForm() {
         <Field name="hairStyle" label="Hair style" value={character?.hairStyle ?? ""} />
         <Field name="eyeColor" label="Eye color" value={character?.eyeColor ?? ""} />
         <Area name="personality" label="Personality" value={character?.personality ?? ""} />
-        <Area name="strengths" label="Strengths" value={character?.strengths ?? ""} />
+        <Area name="shortBiography" label="Short biography" value={character?.shortBiography ?? ""} />
+        <Area name="coreTraits" label="Core traits" value={(character?.coreTraits ?? []).join("\n") || character?.strengths || ""} />
+        <Area name="signatureQuote" label="Signature quote" value={character?.signatureQuote ?? ""} />
+        <Area name="memorableQuotes" label="Memorable quotes" value={(character?.memorableQuotes ?? []).join("\n")} />
         <Area name="weaknesses" label="Weaknesses" value={character?.weaknesses ?? ""} />
         <Area name="ambitions" label="Ambitions" value={character?.ambitions ?? ""} />
         <Area name="fears" label="Fears" value={character?.fears ?? ""} />

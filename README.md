@@ -87,11 +87,31 @@ Open `/studio/production-test` after signing in as the studio admin. Run the aut
 
 The test dashboard checks Firebase config, Google Auth availability, admin status, Firestore write/read, Dexie availability, reader identity, pack import table, service worker registration, online/offline state, and build version.
 
+## Release Stabilization Checklist
+
+Before deploying a production release, verify:
+
+- Google Auth login works for the super admin and an approved staff account.
+- Staff permissions show only allowed modules and direct denied routes show Access Denied.
+- Studio can create an episode, add chapters and paragraphs, preview, build, and download a pack.
+- Reader can import the pack, open it, save progress, reopen offline, and show ReaderID profile data.
+- Library booklet catalogue/import/read flows still render.
+- Character, business, property, vehicle, actor, scene, timeline, continuity, asset, commerce, and analytics routes render without crashing.
+- Dark and light themes keep text, forms, buttons, sidebars, cards, tables, and navigation readable.
+- Mobile routes do not create horizontal scrolling on core reader, studio, import, editor, pack builder, and analytics screens.
+- `/studio/production-test` passes Firebase, Auth, Firestore, Dexie, service worker, online/offline, and build-version checks.
+- `npm run build:shell` passes locally.
+- `firebase deploy --only hosting:empireot` is run only after the build and production-test checks pass.
+
 ## Staff Permissions
 
 Staff access uses Firebase Auth Google Sign-In plus Firestore documents in `studioStaff`, keyed by lowercased email address. The permanent super admin is `seigendc@gmail.com` and receives the `*` permission. Staff records can be managed from `/studio/staff` by a user with `staff.manage`.
 
 Frontend permission checks control navigation and route UX only. Firestore Security Rules must enforce the same roles and permissions server-side before these controls are treated as production security boundaries. Add rules for `studioStaff`, `studioAuditLogs`, episode, pack, licensing, mall, story, production, and settings collections so users can only read/write data allowed by their staff record.
+
+## Premium Advertising
+
+The advertising and Business Spotlight system is documented in [docs/advertising-system.md](docs/advertising-system.md). It uses Firestore collections plus Dexie offline caches, with no backend API dependency.
 
 ## Local Draft Mode
 

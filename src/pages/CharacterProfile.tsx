@@ -45,7 +45,7 @@ export default function CharacterProfile() {
       <PageHeader
         eyebrow={character.characterCode || "Character"}
         title={character.displayName || character.name}
-        subtitle={`${character.role || "Role pending"} / ${character.occupation || "Occupation pending"} / ${character.status || "active"}`}
+        subtitle={`${character.archetype || "Character"} / ${character.position || character.role || "Role pending"} / ${character.status || "active"}`}
         actions={[{ label: "Edit", to: `/characters/${characterId}/edit`, primary: true }, { label: "Graph", to: "/characters/relationships" }, { label: "Appearances", to: "/characters/appearances" }]}
       />
       <section className="panel grid gap-4 p-4 md:grid-cols-[220px_1fr]">
@@ -53,14 +53,27 @@ export default function CharacterProfile() {
           {character.portraitUrl || character.imageUrl ? <img className="h-full w-full object-cover" src={character.portraitUrl || character.imageUrl} alt="" /> : <div className="grid h-full place-items-center text-lg font-black text-signal">{character.characterCode}</div>}
         </div>
         <div className="grid gap-4">
+          <section className="surface-muted border-app border p-4">
+            <div className="flex flex-wrap gap-2">
+              <span className="status-badge border-signal text-signal">{character.archetype || "Key Player"}</span>
+              <span className="status-badge border-white/15 text-muted">Age {character.age || "-"}</span>
+            </div>
+            <h2 className="mt-3 text-2xl font-black">{character.position || character.role || character.occupation}</h2>
+            {(character.signatureQuote || character.memorableQuotes?.[0]) && (
+              <blockquote className="mt-4 border-l-2 border-signal bg-black/20 p-3 font-serif text-base font-bold leading-7 text-muted">
+                {character.signatureQuote || character.memorableQuotes?.[0]}
+              </blockquote>
+            )}
+          </section>
           <Info title="Story profile" rows={[
-            ["Backstory", character.backstory || character.biography],
+            ["Biography", character.biography || character.backstory],
             ["Current status", character.currentStoryStatus || character.currentStatus],
             ["Current conflict", character.currentConflict],
             ["Current goal", character.currentGoal],
           ]} />
           <Info title="Personality" rows={[
             ["Personality", character.personality],
+            ["Core traits", (character.coreTraits ?? []).join(", ") || character.strengths],
             ["Strengths", character.strengths],
             ["Weaknesses", character.weaknesses],
             ["Ambitions", character.ambitions],
@@ -68,6 +81,16 @@ export default function CharacterProfile() {
             ["Values", character.values],
           ]} />
         </div>
+      </section>
+      <section className="grid gap-4 xl:grid-cols-2">
+        <Info title="Memorable quotes" rows={(character.memorableQuotes?.length ? character.memorableQuotes : character.signatureQuote ? [character.signatureQuote] : []).map((quote, index) => [`Quote ${index + 1}`, quote])} />
+        <Info title="Corporate role" rows={[
+          ["Position", character.position || character.role],
+          ["Occupation", character.occupation],
+          ["Businesses owned", (character.businessesOwned ?? []).join(", ")],
+          ["Executive roles", (character.executiveRoles ?? []).join(", ")],
+          ["Shareholdings", (character.shareholdings ?? []).join(", ")],
+        ]} />
       </section>
       <section className="grid gap-4 xl:grid-cols-2">
         <Info title="Identity" rows={[

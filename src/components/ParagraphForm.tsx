@@ -24,6 +24,15 @@ export function ParagraphForm({ episodeId, chapters, paragraph, canDeleteDraft =
       onSubmit={async (event) => {
         event.preventDefault();
         const formData = new FormData(event.currentTarget);
+        const imageSlotsJson = stringValue(formData, "imageSlotsJson", "[]");
+        let imageSlots: Paragraph["imageSlots"] = [];
+        try {
+          const parsed = JSON.parse(imageSlotsJson || "[]");
+          imageSlots = Array.isArray(parsed) ? parsed : [];
+        } catch {
+          setError("Image slots JSON must be valid JSON.");
+          return;
+        }
         const input = {
           id: paragraph?.id,
           episodeId,
@@ -34,10 +43,13 @@ export function ParagraphForm({ episodeId, chapters, paragraph, canDeleteDraft =
           imagePrompt: stringValue(formData, "imagePrompt"),
           scenePrompt: stringValue(formData, "scenePrompt"),
           cameraDirection: stringValue(formData, "cameraDirection"),
+          cinematicDirection: stringValue(formData, "cinematicDirection"),
           emotionalTone: stringValue(formData, "emotionalTone"),
           culturalDetail: stringValue(formData, "culturalDetail"),
+          culturalContinuityNote: stringValue(formData, "culturalContinuityNote"),
           businessContinuityNote: stringValue(formData, "businessContinuityNote"),
           interactiveLinksJson: stringValue(formData, "interactiveLinksJson", "[]"),
+          imageSlots,
           mentionedCharacterIds: stringValue(formData, "mentionedCharacterIds").split(/[\n,;]+/).map((item) => item.trim()).filter(Boolean),
           mentionedProperties: stringValue(formData, "mentionedProperties").split(/[\n,;]+/).map((item) => item.trim()).filter(Boolean),
           propertyInteractionPrompt: stringValue(formData, "propertyInteractionPrompt"),
@@ -79,13 +91,13 @@ export function ParagraphForm({ episodeId, chapters, paragraph, canDeleteDraft =
         <span className="label">Body</span>
         <textarea className="field min-h-28" name="body" defaultValue={paragraph?.body ?? ""} required />
       </label>
-      {["dialogueJson", "interactiveLinksJson", "imagePrompt", "scenePrompt"].map((name) => (
+      {["dialogueJson", "interactiveLinksJson", "imageSlotsJson", "imagePrompt", "scenePrompt"].map((name) => (
         <label key={name} className="sm:col-span-2">
           <span className="label">{name}</span>
-          <textarea className="field min-h-20" name={name} defaultValue={(paragraph as unknown as Record<string, string> | undefined)?.[name] ?? (name.endsWith("Json") ? "[]" : "")} />
+          <textarea className="field min-h-20" name={name} defaultValue={name === "imageSlotsJson" ? JSON.stringify(paragraph?.imageSlots ?? [], null, 2) : (paragraph as unknown as Record<string, string> | undefined)?.[name] ?? (name.endsWith("Json") ? "[]" : "")} />
         </label>
       ))}
-      {["cameraDirection", "emotionalTone", "culturalDetail", "businessContinuityNote"].map((name) => (
+      {["cameraDirection", "cinematicDirection", "emotionalTone", "culturalDetail", "culturalContinuityNote", "businessContinuityNote"].map((name) => (
         <label key={name}>
           <span className="label">{name}</span>
           <input className="field" name={name} defaultValue={(paragraph as unknown as Record<string, string> | undefined)?.[name] ?? ""} />

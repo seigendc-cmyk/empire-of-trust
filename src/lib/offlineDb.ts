@@ -1,8 +1,14 @@
 import Dexie, { type Table } from "dexie";
+import { doc, serverTimestamp, setDoc } from "firebase/firestore";
+import { db, isFirebaseConfigured } from "./firebase";
 import type {
   EpisodePack,
   ActivationAttempt,
   AgentActivationRequest,
+  Advertiser,
+  AdvertisingCampaign,
+  AdvertisingClick,
+  AdvertisingImpression,
   DeviceIdentity,
   EotActor,
   EotActorAudition,
@@ -10,12 +16,17 @@ import type {
   EotActorEpisodeAppearance,
   EotActorPortfolio,
   EotActorSceneAssignment,
+  EotAnalyticsCacheRecord,
+  EotAnalyticsFilterRecord,
+  EotAnalyticsSnapshot,
   EotAsset,
   EotAssetFolder,
   EotAssetPrompt,
   EotAssetUsage,
   EotAssetVersion,
   EotBusiness,
+  BusinessSpotlight,
+  CampaignAnalytics,
   EotCatalogueEntry,
   EotCharacter,
   EotCharacterAppearance,
@@ -48,6 +59,7 @@ import type {
   EotVehicleOwnership,
   EotVehicleRelationship,
   EotVehicleUsage,
+  EpisodeSponsor,
   LicenceActivityLog,
   LocalLicence,
   EotCasting,
@@ -92,10 +104,34 @@ import type {
 } from "../types";
 
 export type SyncStatus = "pending" | "synced" | "failed";
+export type PackType = "episode" | "library_booklet" | "vendor" | "asset" | "quiz";
+
+export interface InstalledPackRecord {
+  id: string;
+  packId: string;
+  packType: PackType;
+  version: string;
+  title: string;
+  createdAt: string;
+  installedAt: string;
+  updatedAt: string;
+  requiredLicencePlan: string;
+  checksumAlgorithm: string;
+  checksum: string;
+  signature: string;
+  sourceFileName?: string;
+  entityId?: string;
+  entityIds?: string[];
+  entityCount: number;
+  storageBytes: number;
+  status: "installed" | "archived";
+}
+
 export type ReaderEventType =
   | "app_opened"
   | "reader_created"
   | "pack_imported"
+  | "episode_pack_imported"
   | "episode_opened"
   | "chapter_opened"
   | "paragraph_viewed"
@@ -112,10 +148,16 @@ export type ReaderEventType =
   | "badge_earned"
   | "leaderboard_viewed"
   | "library_pack_imported"
+  | "booklet_pack_imported"
   | "library_booklet_opened"
+  | "booklet_opened"
   | "library_chapter_opened"
   | "library_booklet_completed"
+  | "booklet_completed"
   | "library_reading_progress_saved"
+  | "whatsapp_clicked"
+  | "commerce_vendor_viewed"
+  | "commerce_product_viewed"
   | "daily_login"
   | "community_participation"
   | "invite_accepted"
@@ -127,6 +169,8 @@ export interface ReaderIdentity {
   deviceId: string;
   displayName?: string;
   phone?: string;
+  city?: string;
+  country?: string;
   avatarUrl?: string;
   createdAt: string;
   lastSeenAt: string;
@@ -177,6 +221,31 @@ export interface LibraryReadingProgress {
   chapterId: string;
   sectionId: string;
   updatedAt: string;
+}
+
+export interface LibraryQuizAttempt {
+  id: string;
+  readerId: string;
+  bookletId: string;
+  quizId: string;
+  score: number;
+  maxScore: number;
+  answersJson: string;
+  completedAt: string;
+  syncStatus: SyncStatus;
+}
+
+export interface LibraryWhatsappLog {
+  id: string;
+  readerId: string;
+  bookletId: string;
+  chapterId?: string;
+  sectionId?: string;
+  promptId: string;
+  whatsappNumber: string;
+  message: string;
+  createdAt: string;
+  syncStatus: SyncStatus;
 }
 
 export interface ReaderActivityLog {
@@ -307,6 +376,8 @@ export interface SyncQueueItem {
     | "readerBadges"
     | "readerDramaParticipation"
     | "readerIdentity"
+    | "libraryQuizAttempts"
+    | "libraryWhatsappLogs"
     | "readerQuizAttempts"
     | "readerPollVotes"
     | "readerPredictions"
@@ -332,11 +403,15 @@ export interface ReaderSettings {
 class EotReaderDb extends Dexie {
   readerIdentity!: Table<ReaderIdentity, string>;
   readerProfiles!: Table<ReaderProfileRecord, string>;
+  packRegistry!: Table<InstalledPackRecord, string>;
   storyVotes!: Table<StoryVote, string>;
   episodePacks!: Table<EpisodePack, string>;
   libraryPacks!: Table<LibraryBookletPack, string>;
+  libraryBookletPacks!: Table<LibraryBookletPack, string>;
   readingProgress!: Table<ReadingProgress, string>;
   libraryReadingProgress!: Table<LibraryReadingProgress, string>;
+  libraryQuizAttempts!: Table<LibraryQuizAttempt, string>;
+  libraryWhatsappLogs!: Table<LibraryWhatsappLog, string>;
   readerActivityLog!: Table<ReaderActivityLog, string>;
   readerChoices!: Table<ReaderChoice, string>;
   readerQuizAttempts!: Table<ReaderQuizAttempt, string>;
@@ -394,6 +469,16 @@ class EotReaderDb extends Dexie {
   vendorContacts!: Table<EotVendorContact, string>;
   commerceInterestLog!: Table<EotCommerceInterestLog, string>;
   commerceLinkCache!: Table<EotCommerceLink, string>;
+  advertisers!: Table<Advertiser, string>;
+  advertisingCampaigns!: Table<AdvertisingCampaign, string>;
+  advertisingImpressions!: Table<AdvertisingImpression, string>;
+  advertisingClicks!: Table<AdvertisingClick, string>;
+  businessSpotlights!: Table<BusinessSpotlight, string>;
+  episodeSponsors!: Table<EpisodeSponsor, string>;
+  campaignAnalytics!: Table<CampaignAnalytics, string>;
+  analyticsCache!: Table<EotAnalyticsCacheRecord, string>;
+  analyticsSnapshotCache!: Table<EotAnalyticsSnapshot, string>;
+  analyticsFilterCache!: Table<EotAnalyticsFilterRecord, string>;
   quizCache!: Table<EotQuiz, string>;
   pollCache!: Table<EotPoll, string>;
   predictionCache!: Table<EotPrediction, string>;
@@ -1580,6 +1665,364 @@ class EotReaderDb extends Dexie {
       relationshipContinuityCache: "id, entityId, entityType, status, statusDate",
       episodeContinuitySummaryCache: "id, episodeId, seasonNumber, episodeNumber, continuityStatus",
     });
+    this.version(22).stores({
+      readerIdentity: "readerId, deviceId, syncStatus",
+      episodePacks: "content.episode.id, manifest.title, manifest.packId, manifest.version",
+      libraryPacks: "manifest.packId, manifest.bookletCode, manifest.version, content.booklet.id",
+      readingProgress: "episodeId, chapterId, updatedAt",
+      libraryReadingProgress: "bookletId, chapterId, updatedAt",
+      readerActivityLog: "id, readerId, eventType, episodeId, syncStatus, createdAt",
+      readerChoices: "id, readerId, episodeId, choiceType, syncStatus, createdAt",
+      readerQuizAttempts: "id, readerId, quizId, episodeId, syncStatus, completedAt",
+      readerPollVotes: "id, readerId, pollId, episodeId, syncStatus, createdAt",
+      readerPredictions: "id, readerId, predictionId, episodeId, syncStatus, createdAt",
+      readerRewards: "id, readerId, rewardType, episodeId, syncStatus, earnedAt",
+      readerBadges: "id, readerId, badgeCode, syncStatus, earnedAt",
+      readerRankings: "id, readerId, period, points, updatedAt, syncStatus",
+      readerProfiles: "id, readerId, country, city, currentRank, lastSeenAt",
+      storyVotes: "id, readerId, episodeId, voteType, createdAt",
+      readerDramaParticipation: "id, readerId, participationType, episodeId, syncStatus, createdAt",
+      readerParticipation: "id, readerId, participationType, episodeId, syncStatus, createdAt",
+      syncQueue: "id, readerId, entityType, entityId, syncStatus, createdAt",
+      readerSettings: "id",
+      deviceIdentity: "id, fingerprint, createdAt",
+      localLicences: "id, planCode, status, deviceId, expiresAt",
+      activationAttempts: "id, code, status, attemptedAt",
+      scratchCardAttempts: "id, code, status, attemptedAt",
+      agentActivationRequests: "id, agentId, status, createdAt",
+      licenceActivityLog: "id, activityType, createdAt",
+      characterCache: "id, name, displayName, role, status",
+      characterAppearanceCache: "id, characterId, episodeId, seasonNumber, episodeNumber",
+      characterTimelineCache: "id, characterId, eventType, eventDate",
+      characterRelationshipCache: "id, characterA, characterB, relationshipType",
+      assetCache: "id, name, title, type, assetType, category, status",
+      assetPromptCache: "id, assetId, promptType, title, style, status",
+      assetFolderCache: "id, name, category, storagePath",
+      assetVersionCache: "id, assetId, versionNumber, createdAt",
+      assetUsageCache: "id, assetId, usedInType, usedInId, createdAt",
+      actorCache: "id, actorCode, name, stageName, status",
+      actorPortfolioCache: "id, actorId, mediaType, title",
+      actorAvailabilityCache: "id, actorId, availabilityDate, status",
+      actorAuditionCache: "id, actorId, characterId, status",
+      castingAssignmentCache: "id, actorId, characterId, status",
+      actorEpisodeAppearanceCache: "id, actorId, episodeId, seasonNumber, episodeNumber",
+      actorSceneAssignmentCache: "id, actorId, sceneId, status",
+      talentNoteCache: "id, actorId, noteType, createdAt",
+      propertyCache: "id, propertyCode, name, propertyType, city, status",
+      propertyOwnershipCache: "id, propertyId, ownerType, ownerId",
+      propertyTenantCache: "id, propertyId, tenantType, tenantId, status",
+      propertyValuationCache: "id, propertyId, valuationDate, valuationSource",
+      propertyAssetCache: "id, propertyId, assetType, assetName",
+      propertyAppearanceCache: "id, propertyId, seasonNumber, episodeNumber",
+      propertyRelationshipCache: "id, propertyA, propertyB, relationshipType",
+      vehicleCache: "id, vehicleCode, name, vehicleType, registrationNumber, status",
+      vehicleOwnershipCache: "id, vehicleId, ownerType, ownerId",
+      vehicleUsageCache: "id, vehicleId, usageType, assignedCharacterId",
+      vehicleMaintenanceCache: "id, vehicleId, maintenanceDate, maintenanceType",
+      vehicleAppearanceCache: "id, vehicleId, seasonNumber, episodeNumber",
+      vehicleRelationshipCache: "id, vehicleA, vehicleB, relationshipType",
+      relationshipCache: "id, type, fromCharacterId, toCharacterId, businessId",
+      vendorPacks: "manifest.packId, manifest.vendorId, manifest.version",
+      vendors: "id, vendorCode, businessId, businessName, tradingName, sector, category, city, suburb, status",
+      products: "id, productCode, vendorId, name, category, subcategory, brand, availability, stockStatus",
+      productCategories: "id, name, slug, parentCategoryId, sortOrder, active",
+      vendorBranches: "id, vendorId, branchName, city, suburb, active",
+      vendorContacts: "id, vendorId, label, contactType, active",
+      commerceInterestLog: "id, readerId, eventType, vendorId, productId, searchTerm, syncStatus, createdAt",
+      commerceLinkCache: "id, linkType, sourceType, sourceId, targetType, targetId",
+      analyticsCache: "id, cacheKey, updatedAt",
+      analyticsSnapshotCache: "id, snapshotType, period, createdAt, updatedAt",
+      analyticsFilterCache: "id, updatedAt",
+      quizCache: "id, episodeId, status, createdAt",
+      pollCache: "id, episodeId, status, createdAt",
+      predictionCache: "id, episodeId, status, closingDate",
+      leaderboardCache: "id, readerId, period, points, updatedAt",
+      catalogueCache: "id, title, seasonNumber, episodeNumber, status",
+      libraryCatalogueCache: "bookletId, title, category, status, updatedAt",
+      publishedPackCache: "id, episodeId, packId, status, createdAt",
+      releaseScheduleCache: "id, episodeId, scheduledDate, status",
+      contentRuleCache: "id, ruleType, status",
+      productionActorCache: "id, name, status",
+      castingCache: "id, actorId, characterId, status",
+      productionCharacterCache: "id, name, role",
+      sceneCache: "id, sceneCode, sceneNumber, episodeId, productionStatus",
+      sceneBreakdownCache: "id, sceneId, episodeId",
+      sceneCastCache: "id, sceneId, actorId, characterId",
+      sceneAssetCache: "id, sceneId, assetType, assetId",
+      sceneContinuityCache: "id, sceneId, continuityType, status",
+      sceneScheduleCache: "id, sceneId, shootDate, status",
+      sceneShotListCache: "id, sceneId, shotNumber",
+      scenePropCache: "id, sceneId, propName",
+      sceneWardrobeCache: "id, sceneId, characterId",
+      locationCache: "id, name, type",
+      productionPropertyCache: "id, name, status",
+      productionVehicleCache: "id, name, status",
+      productionAssetCache: "id, name, assetType",
+      productionScheduleCache: "id, shootDate, status",
+      continuityRecordCache: "id, episodeId, status",
+      storyTimelineCache: "id, episodeId, eventType, storyDate",
+      characterArcCache: "id, characterId, arcType, status",
+      relationshipArcCache: "id, relationshipId, status",
+      businessTimelineCache: "id, businessId, eventType, storyDate",
+      conflictMapCache: "id, conflictType, status",
+      continuityCheckCache: "id, checkCode, checkType, targetType, targetId, result, severity, resolved",
+      episodePlanCache: "id, episodeId, seasonNumber, episodeNumber",
+      storyPromptCache: "id, promptType, title",
+      storyRuleCache: "id, ruleCode, ruleType, active",
+      timelineEventCache: "id, eventCode, eventType, seasonNumber, episodeNumber, episodeId, storyDate, importance",
+      continuityRuleCache: "id, ruleCode, ruleType, severity, active",
+      continuityWarningCache: "id, warningCode, targetType, targetId, linkedEntityType, linkedEntityId, severity, status",
+      characterContinuityCache: "id, entityId, entityType, status, statusDate",
+      businessContinuityCache: "id, entityId, entityType, status, statusDate",
+      propertyContinuityCache: "id, entityId, entityType, status, statusDate",
+      vehicleContinuityCache: "id, entityId, entityType, status, statusDate",
+      relationshipContinuityCache: "id, entityId, entityType, status, statusDate",
+      episodeContinuitySummaryCache: "id, episodeId, seasonNumber, episodeNumber, continuityStatus",
+    });
+    this.version(23).stores({
+      readerIdentity: "readerId, deviceId, syncStatus",
+      episodePacks: "content.episode.id, manifest.title, manifest.packId, manifest.version",
+      libraryPacks: "manifest.packId, manifest.bookletCode, manifest.version, content.booklet.id",
+      libraryBookletPacks: "manifest.packId, manifest.bookletCode, manifest.version, content.booklet.id",
+      readingProgress: "episodeId, chapterId, updatedAt",
+      libraryReadingProgress: "bookletId, chapterId, sectionId, updatedAt",
+      libraryQuizAttempts: "id, readerId, bookletId, quizId, completedAt, syncStatus",
+      libraryWhatsappLogs: "id, readerId, bookletId, promptId, createdAt, syncStatus",
+      readerActivityLog: "id, readerId, eventType, episodeId, syncStatus, createdAt",
+      readerChoices: "id, readerId, episodeId, choiceType, syncStatus, createdAt",
+      readerQuizAttempts: "id, readerId, quizId, episodeId, syncStatus, completedAt",
+      readerPollVotes: "id, readerId, pollId, episodeId, syncStatus, createdAt",
+      readerPredictions: "id, readerId, predictionId, episodeId, syncStatus, createdAt",
+      readerRewards: "id, readerId, rewardType, episodeId, syncStatus, earnedAt",
+      readerBadges: "id, readerId, badgeCode, syncStatus, earnedAt",
+      readerRankings: "id, readerId, period, points, updatedAt, syncStatus",
+      readerProfiles: "id, readerId, country, city, currentRank, lastSeenAt",
+      storyVotes: "id, readerId, episodeId, voteType, createdAt",
+      readerDramaParticipation: "id, readerId, participationType, episodeId, syncStatus, createdAt",
+      readerParticipation: "id, readerId, participationType, episodeId, syncStatus, createdAt",
+      syncQueue: "id, readerId, entityType, entityId, syncStatus, createdAt",
+      readerSettings: "id",
+      deviceIdentity: "id, fingerprint, createdAt",
+      localLicences: "id, planCode, status, deviceId, expiresAt",
+      activationAttempts: "id, code, status, attemptedAt",
+      scratchCardAttempts: "id, code, status, attemptedAt",
+      agentActivationRequests: "id, agentId, status, createdAt",
+      licenceActivityLog: "id, activityType, createdAt",
+      characterCache: "id, name, displayName, role, status",
+      characterAppearanceCache: "id, characterId, episodeId, seasonNumber, episodeNumber",
+      characterTimelineCache: "id, characterId, eventType, eventDate",
+      characterRelationshipCache: "id, characterA, characterB, relationshipType",
+      assetCache: "id, name, title, type, assetType, category, status",
+      assetPromptCache: "id, assetId, promptType, title, style, status",
+      assetFolderCache: "id, name, category, storagePath",
+      assetVersionCache: "id, assetId, versionNumber, createdAt",
+      assetUsageCache: "id, assetId, usedInType, usedInId, createdAt",
+      actorCache: "id, actorCode, name, stageName, status",
+      actorPortfolioCache: "id, actorId, mediaType, title",
+      actorAvailabilityCache: "id, actorId, availabilityDate, status",
+      actorAuditionCache: "id, actorId, characterId, status",
+      castingAssignmentCache: "id, actorId, characterId, status",
+      actorEpisodeAppearanceCache: "id, actorId, episodeId, seasonNumber, episodeNumber",
+      actorSceneAssignmentCache: "id, actorId, sceneId, status",
+      talentNoteCache: "id, actorId, noteType, createdAt",
+      propertyCache: "id, propertyCode, name, propertyType, city, status",
+      propertyOwnershipCache: "id, propertyId, ownerType, ownerId",
+      propertyTenantCache: "id, propertyId, tenantType, tenantId, status",
+      propertyValuationCache: "id, propertyId, valuationDate, valuationSource",
+      propertyAssetCache: "id, propertyId, assetType, assetName",
+      propertyAppearanceCache: "id, propertyId, seasonNumber, episodeNumber",
+      propertyRelationshipCache: "id, propertyA, propertyB, relationshipType",
+      vehicleCache: "id, vehicleCode, name, vehicleType, registrationNumber, status",
+      vehicleOwnershipCache: "id, vehicleId, ownerType, ownerId",
+      vehicleUsageCache: "id, vehicleId, usageType, assignedCharacterId",
+      vehicleMaintenanceCache: "id, vehicleId, maintenanceDate, maintenanceType",
+      vehicleAppearanceCache: "id, vehicleId, seasonNumber, episodeNumber",
+      vehicleRelationshipCache: "id, vehicleA, vehicleB, relationshipType",
+      relationshipCache: "id, type, fromCharacterId, toCharacterId, businessId",
+      vendorPacks: "manifest.packId, manifest.vendorId, manifest.version",
+      vendors: "id, vendorCode, businessId, businessName, tradingName, sector, category, city, suburb, status",
+      products: "id, productCode, vendorId, name, category, subcategory, brand, availability, stockStatus",
+      productCategories: "id, name, slug, parentCategoryId, sortOrder, active",
+      vendorBranches: "id, vendorId, branchName, city, suburb, active",
+      vendorContacts: "id, vendorId, label, contactType, active",
+      commerceInterestLog: "id, readerId, eventType, vendorId, productId, searchTerm, syncStatus, createdAt",
+      commerceLinkCache: "id, linkType, sourceType, sourceId, targetType, targetId",
+      analyticsCache: "id, cacheKey, updatedAt",
+      analyticsSnapshotCache: "id, snapshotType, period, createdAt, updatedAt",
+      analyticsFilterCache: "id, updatedAt",
+      quizCache: "id, episodeId, status, createdAt",
+      pollCache: "id, episodeId, status, createdAt",
+      predictionCache: "id, episodeId, status, closingDate",
+      leaderboardCache: "id, readerId, period, points, updatedAt",
+      catalogueCache: "id, title, seasonNumber, episodeNumber, status",
+      libraryCatalogueCache: "bookletId, title, category, status, updatedAt",
+      publishedPackCache: "id, episodeId, packId, status, createdAt",
+      releaseScheduleCache: "id, episodeId, scheduledDate, status",
+      contentRuleCache: "id, ruleType, status",
+      productionActorCache: "id, name, status",
+      castingCache: "id, actorId, characterId, status",
+      productionCharacterCache: "id, name, role",
+      sceneCache: "id, sceneCode, sceneNumber, episodeId, productionStatus",
+      sceneBreakdownCache: "id, sceneId, episodeId",
+      sceneCastCache: "id, sceneId, actorId, characterId",
+      sceneAssetCache: "id, sceneId, assetType, assetId",
+      sceneContinuityCache: "id, sceneId, continuityType, status",
+      sceneScheduleCache: "id, sceneId, shootDate, status",
+      sceneShotListCache: "id, sceneId, shotNumber",
+      scenePropCache: "id, sceneId, propName",
+      sceneWardrobeCache: "id, sceneId, characterId",
+      locationCache: "id, name, type",
+      productionPropertyCache: "id, name, status",
+      productionVehicleCache: "id, name, status",
+      productionAssetCache: "id, name, assetType",
+      productionScheduleCache: "id, shootDate, status",
+      continuityRecordCache: "id, episodeId, status",
+      storyTimelineCache: "id, episodeId, eventType, storyDate",
+      characterArcCache: "id, characterId, arcType, status",
+      relationshipArcCache: "id, relationshipId, status",
+      businessTimelineCache: "id, businessId, eventType, storyDate",
+      conflictMapCache: "id, conflictType, status",
+      continuityCheckCache: "id, checkCode, checkType, targetType, targetId, result, severity, resolved",
+      episodePlanCache: "id, episodeId, seasonNumber, episodeNumber",
+      storyPromptCache: "id, promptType, title",
+      storyRuleCache: "id, ruleCode, ruleType, active",
+      timelineEventCache: "id, eventCode, eventType, seasonNumber, episodeNumber, episodeId, storyDate, importance",
+      continuityRuleCache: "id, ruleCode, ruleType, severity, active",
+      continuityWarningCache: "id, warningCode, targetType, targetId, linkedEntityType, linkedEntityId, severity, status",
+      characterContinuityCache: "id, entityId, entityType, status, statusDate",
+      businessContinuityCache: "id, entityId, entityType, status, statusDate",
+      propertyContinuityCache: "id, entityId, entityType, status, statusDate",
+      vehicleContinuityCache: "id, entityId, entityType, status, statusDate",
+      relationshipContinuityCache: "id, entityId, entityType, status, statusDate",
+      episodeContinuitySummaryCache: "id, episodeId, seasonNumber, episodeNumber, continuityStatus",
+    });
+    this.version(24).stores({
+      readerIdentity: "readerId, deviceId, syncStatus",
+      packRegistry: "id, packId, packType, version, title, status, installedAt, updatedAt",
+      episodePacks: "content.episode.id, manifest.title, manifest.packId, manifest.version",
+      libraryPacks: "manifest.packId, manifest.bookletCode, manifest.version, content.booklet.id",
+      libraryBookletPacks: "manifest.packId, manifest.bookletCode, manifest.version, content.booklet.id",
+      readingProgress: "episodeId, chapterId, updatedAt",
+      libraryReadingProgress: "bookletId, chapterId, sectionId, updatedAt",
+      libraryQuizAttempts: "id, readerId, bookletId, quizId, completedAt, syncStatus",
+      libraryWhatsappLogs: "id, readerId, bookletId, promptId, createdAt, syncStatus",
+      readerActivityLog: "id, readerId, eventType, episodeId, syncStatus, createdAt",
+      readerChoices: "id, readerId, episodeId, choiceType, syncStatus, createdAt",
+      readerQuizAttempts: "id, readerId, quizId, episodeId, syncStatus, completedAt",
+      readerPollVotes: "id, readerId, pollId, episodeId, syncStatus, createdAt",
+      readerPredictions: "id, readerId, predictionId, episodeId, syncStatus, createdAt",
+      readerRewards: "id, readerId, rewardType, episodeId, syncStatus, earnedAt",
+      readerBadges: "id, readerId, badgeCode, syncStatus, earnedAt",
+      readerRankings: "id, readerId, period, points, updatedAt, syncStatus",
+      readerProfiles: "id, readerId, country, city, currentRank, lastSeenAt",
+      storyVotes: "id, readerId, episodeId, voteType, createdAt",
+      readerDramaParticipation: "id, readerId, participationType, episodeId, syncStatus, createdAt",
+      readerParticipation: "id, readerId, participationType, episodeId, syncStatus, createdAt",
+      syncQueue: "id, readerId, entityType, entityId, syncStatus, createdAt",
+      readerSettings: "id",
+      deviceIdentity: "id, fingerprint, createdAt",
+      localLicences: "id, planCode, status, deviceId, expiresAt",
+      activationAttempts: "id, code, status, attemptedAt",
+      scratchCardAttempts: "id, code, status, attemptedAt",
+      agentActivationRequests: "id, agentId, status, createdAt",
+      licenceActivityLog: "id, activityType, createdAt",
+      characterCache: "id, name, displayName, role, status",
+      characterAppearanceCache: "id, characterId, episodeId, seasonNumber, episodeNumber",
+      characterTimelineCache: "id, characterId, eventType, eventDate",
+      characterRelationshipCache: "id, characterA, characterB, relationshipType",
+      assetCache: "id, name, title, type, assetType, category, status",
+      assetPromptCache: "id, assetId, promptType, title, style, status",
+      assetFolderCache: "id, name, category, storagePath",
+      assetVersionCache: "id, assetId, versionNumber, createdAt",
+      assetUsageCache: "id, assetId, usedInType, usedInId, createdAt",
+      actorCache: "id, actorCode, name, stageName, status",
+      actorPortfolioCache: "id, actorId, mediaType, title",
+      actorAvailabilityCache: "id, actorId, availabilityDate, status",
+      actorAuditionCache: "id, actorId, characterId, status",
+      castingAssignmentCache: "id, actorId, characterId, status",
+      actorEpisodeAppearanceCache: "id, actorId, episodeId, seasonNumber, episodeNumber",
+      actorSceneAssignmentCache: "id, actorId, sceneId, status",
+      talentNoteCache: "id, actorId, noteType, createdAt",
+      propertyCache: "id, propertyCode, name, propertyType, city, status",
+      propertyOwnershipCache: "id, propertyId, ownerType, ownerId",
+      propertyTenantCache: "id, propertyId, tenantType, tenantId, status",
+      propertyValuationCache: "id, propertyId, valuationDate, valuationSource",
+      propertyAssetCache: "id, propertyId, assetType, assetName",
+      propertyAppearanceCache: "id, propertyId, seasonNumber, episodeNumber",
+      propertyRelationshipCache: "id, propertyA, propertyB, relationshipType",
+      vehicleCache: "id, vehicleCode, name, vehicleType, registrationNumber, status",
+      vehicleOwnershipCache: "id, vehicleId, ownerType, ownerId",
+      vehicleUsageCache: "id, vehicleId, usageType, assignedCharacterId",
+      vehicleMaintenanceCache: "id, vehicleId, maintenanceDate, maintenanceType",
+      vehicleAppearanceCache: "id, vehicleId, seasonNumber, episodeNumber",
+      vehicleRelationshipCache: "id, vehicleA, vehicleB, relationshipType",
+      relationshipCache: "id, type, fromCharacterId, toCharacterId, businessId",
+      vendorPacks: "manifest.packId, manifest.vendorId, manifest.version",
+      vendors: "id, vendorCode, businessId, businessName, tradingName, sector, category, city, suburb, status",
+      products: "id, productCode, vendorId, name, category, subcategory, brand, availability, stockStatus",
+      productCategories: "id, name, slug, parentCategoryId, sortOrder, active",
+      vendorBranches: "id, vendorId, branchName, city, suburb, active",
+      vendorContacts: "id, vendorId, label, contactType, active",
+      commerceInterestLog: "id, readerId, eventType, vendorId, productId, searchTerm, syncStatus, createdAt",
+      commerceLinkCache: "id, linkType, sourceType, sourceId, targetType, targetId",
+      analyticsCache: "id, cacheKey, updatedAt",
+      analyticsSnapshotCache: "id, snapshotType, period, createdAt, updatedAt",
+      analyticsFilterCache: "id, updatedAt",
+      quizCache: "id, episodeId, status, createdAt",
+      pollCache: "id, episodeId, status, createdAt",
+      predictionCache: "id, episodeId, status, closingDate",
+      leaderboardCache: "id, readerId, period, points, updatedAt",
+      catalogueCache: "id, title, seasonNumber, episodeNumber, status",
+      libraryCatalogueCache: "bookletId, title, category, status, updatedAt",
+      publishedPackCache: "id, episodeId, packId, status, createdAt",
+      releaseScheduleCache: "id, episodeId, scheduledDate, status",
+      contentRuleCache: "id, ruleType, status",
+      productionActorCache: "id, name, status",
+      castingCache: "id, actorId, characterId, status",
+      productionCharacterCache: "id, name, role",
+      sceneCache: "id, sceneCode, sceneNumber, episodeId, productionStatus",
+      sceneBreakdownCache: "id, sceneId, episodeId",
+      sceneCastCache: "id, sceneId, actorId, characterId",
+      sceneAssetCache: "id, sceneId, assetType, assetId",
+      sceneContinuityCache: "id, sceneId, continuityType, status",
+      sceneScheduleCache: "id, sceneId, shootDate, status",
+      sceneShotListCache: "id, sceneId, shotNumber",
+      scenePropCache: "id, sceneId, propName",
+      sceneWardrobeCache: "id, sceneId, characterId",
+      locationCache: "id, name, type",
+      productionPropertyCache: "id, name, status",
+      productionVehicleCache: "id, name, status",
+      productionAssetCache: "id, name, assetType",
+      productionScheduleCache: "id, shootDate, status",
+      continuityRecordCache: "id, episodeId, status",
+      storyTimelineCache: "id, episodeId, eventType, storyDate",
+      characterArcCache: "id, characterId, arcType, status",
+      relationshipArcCache: "id, relationshipId, status",
+      businessTimelineCache: "id, businessId, eventType, storyDate",
+      conflictMapCache: "id, conflictType, status",
+      continuityCheckCache: "id, checkCode, checkType, targetType, targetId, result, severity, resolved",
+      episodePlanCache: "id, episodeId, seasonNumber, episodeNumber",
+      storyPromptCache: "id, promptType, title",
+      storyRuleCache: "id, ruleCode, ruleType, active",
+      timelineEventCache: "id, eventCode, eventType, seasonNumber, episodeNumber, episodeId, storyDate, importance",
+      continuityRuleCache: "id, ruleCode, ruleType, severity, active",
+      continuityWarningCache: "id, warningCode, targetType, targetId, linkedEntityType, linkedEntityId, severity, status",
+      characterContinuityCache: "id, entityId, entityType, status, statusDate",
+      businessContinuityCache: "id, entityId, entityType, status, statusDate",
+      propertyContinuityCache: "id, entityId, entityType, status, statusDate",
+      vehicleContinuityCache: "id, entityId, entityType, status, statusDate",
+      relationshipContinuityCache: "id, entityId, entityType, status, statusDate",
+      episodeContinuitySummaryCache: "id, episodeId, seasonNumber, episodeNumber, continuityStatus",
+    });
+    this.version(25).stores({
+      advertisers: "id, vendorId, businessName, industry, location, status, verified, updatedAt",
+      advertisingCampaigns: "id, advertiserId, vendorId, title, packageType, status, moderationStatus, priority, startDate, endDate, targetRegion, targetCategory, updatedAt",
+      advertisingImpressions: "id, campaignId, advertiserId, readerId, placement, entityId, createdAt, syncStatus",
+      advertisingClicks: "id, campaignId, advertiserId, readerId, placement, action, entityId, createdAt, syncStatus",
+      businessSpotlights: "id, campaignId, advertiserId, vendorId, businessName, industry, location, status, priority, startDate, endDate",
+      episodeSponsors: "id, campaignId, advertiserId, episodeId, sponsorName, status, priority, startDate, endDate",
+      campaignAnalytics: "id, campaignId, advertiserId, updatedAt",
+    });
   }
 }
 
@@ -1613,6 +2056,65 @@ async function enqueue(entityType: SyncQueueItem["entityType"], entityId: string
   });
 }
 
+const firestoreSyncTargets: Partial<Record<SyncQueueItem["entityType"], string>> = {
+  readerIdentity: "eotReaderProfiles",
+  readerProfiles: "eotReaderProfiles",
+  readerActivityLog: "eotReaderActivityLogs",
+  readerQuizAttempts: "eotReaderQuizAttempts",
+  libraryQuizAttempts: "eotReaderQuizAttempts",
+  libraryWhatsappLogs: "eotReaderWhatsappLogs",
+  readerRewards: "eotReaderRewards",
+  readerBadges: "eotReaderBadges",
+};
+
+export async function getReaderSyncSummary() {
+  const [pending, synced, failed] = await Promise.all([
+    readerDb.syncQueue.where("syncStatus").equals("pending").count(),
+    readerDb.syncQueue.where("syncStatus").equals("synced").count(),
+    readerDb.syncQueue.where("syncStatus").equals("failed").count(),
+  ]);
+  return { pending, synced, failed };
+}
+
+export async function syncPendingReaderData() {
+  const summary = await getReaderSyncSummary();
+  if (!isFirebaseConfigured || typeof navigator !== "undefined" && !navigator.onLine) {
+    return { ...summary, attempted: 0, syncedNow: 0, failedNow: 0, skipped: true };
+  }
+
+  const pending = await readerDb.syncQueue.where("syncStatus").anyOf("pending", "failed").toArray();
+  let syncedNow = 0;
+  let failedNow = 0;
+  for (const item of pending) {
+    const collectionName = firestoreSyncTargets[item.entityType];
+    if (!collectionName || item.operation === "delete") continue;
+    const attemptCount = item.attemptCount + 1;
+    try {
+      await setDoc(doc(db, collectionName, item.entityId), {
+        ...item.payload,
+        syncQueueId: item.id,
+        syncEntityType: item.entityType,
+        updatedAt: serverTimestamp(),
+        syncedAt: serverTimestamp(),
+      }, { merge: true });
+      await readerDb.syncQueue.update(item.id, { attemptCount, lastAttemptAt: now(), syncStatus: "synced" });
+      syncedNow += 1;
+    } catch {
+      await readerDb.syncQueue.update(item.id, { attemptCount, lastAttemptAt: now(), syncStatus: "failed" });
+      failedNow += 1;
+    }
+  }
+  return { ...(await getReaderSyncSummary()), attempted: pending.length, syncedNow, failedNow, skipped: false };
+}
+
+function syncSoon() {
+  if (typeof window !== "undefined" && typeof navigator !== "undefined" && navigator.onLine && isFirebaseConfigured) {
+    window.setTimeout(() => {
+      syncPendingReaderData().catch(() => undefined);
+    }, 0);
+  }
+}
+
 export async function getOrCreateReaderIdentity() {
   const existing = await readerDb.readerIdentity.toCollection().first();
   const timestamp = now();
@@ -1634,11 +2136,12 @@ export async function getOrCreateReaderIdentity() {
   return identity;
 }
 
-export async function updateReaderIdentity(input: Partial<Pick<ReaderIdentity, "displayName" | "phone" | "avatarUrl">>) {
+export async function updateReaderIdentity(input: Partial<Pick<ReaderIdentity, "displayName" | "phone" | "city" | "country" | "avatarUrl">>) {
   const identity = await getOrCreateReaderIdentity();
   const next = { ...identity, ...input, lastSeenAt: now(), syncStatus: "pending" as SyncStatus };
   await readerDb.readerIdentity.put(next);
   await enqueue("readerIdentity", next.readerId, next as unknown as Record<string, unknown>, next.readerId);
+  syncSoon();
   return next;
 }
 
@@ -1664,6 +2167,7 @@ export async function logActivity(
   await readerDb.readerActivityLog.put(log);
   await enqueue("readerActivityLog", log.id, log as unknown as Record<string, unknown>, reader.readerId);
   await applyRewardRules(log);
+  syncSoon();
   return log;
 }
 
@@ -1711,15 +2215,20 @@ async function applyRewardRules(log: ReaderActivityLog) {
   if (log.eventType === "reward_earned" || log.eventType === "badge_earned") return;
   const earnedAt = now();
   const rewardMap: Partial<Record<ReaderEventType, { points: number; title: string; description: string }>> = {
-    episode_opened: { points: 10, title: "Read episode", description: "Opened and read an Empire of Trust episode." },
-    episode_completed: { points: 20, title: "Finished episode", description: "Completed an Empire of Trust episode." },
-    library_booklet_opened: { points: 5, title: "Read booklet", description: "Opened an independent Library booklet." },
-    library_booklet_completed: { points: 10, title: "Finished booklet", description: "Completed an independent Library booklet." },
+    pack_imported: { points: 10, title: "Episode pack imported", description: "Imported an Empire of Trust episode pack." },
+    episode_pack_imported: { points: 10, title: "Episode pack imported", description: "Imported an Empire of Trust episode pack." },
+    episode_completed: { points: 25, title: "Finished episode", description: "Completed an Empire of Trust episode." },
+    library_pack_imported: { points: 5, title: "Booklet pack imported", description: "Imported an independent Library booklet pack." },
+    booklet_pack_imported: { points: 5, title: "Booklet pack imported", description: "Imported an independent Library booklet pack." },
+    library_booklet_completed: { points: 15, title: "Finished booklet", description: "Completed an independent Library booklet." },
+    booklet_completed: { points: 15, title: "Finished booklet", description: "Completed an independent Library booklet." },
     prediction_submitted: { points: 3, title: "Story vote", description: "Submitted a future story influence vote." },
     poll_voted: { points: 3, title: "Vote", description: "Voted in an Empire of Trust poll." },
     story_vote_cast: { points: 3, title: "Story influence vote", description: "Voted on a future story direction." },
     interactive_link_clicked: { points: 2, title: "Interactive link", description: "Engaged with an interactive story link." },
-    quiz_completed: { points: 15, title: "Quiz pass", description: "Completed an episode quiz." },
+    whatsapp_clicked: { points: 3, title: "WhatsApp engagement", description: "Used a booklet WhatsApp response prompt." },
+    commerce_product_viewed: { points: 1, title: "Commerce product view", description: "Viewed a commerce product." },
+    quiz_completed: { points: 20, title: "Quiz completed", description: "Completed a reader quiz." },
     daily_login: { points: 2, title: "Daily login", description: "Opened the app today." },
     community_participation: { points: 5, title: "Community participation", description: "Took part in the reader community." },
     invite_accepted: { points: 25, title: "Invite accepted", description: "A reader invitation was accepted." },
@@ -1743,7 +2252,79 @@ async function applyRewardRules(log: ReaderActivityLog) {
   const completed = await readerDb.readerActivityLog.where("eventType").equals("episode_completed").toArray();
   const completedEpisodeCount = new Set(completed.map((item) => item.episodeId).filter(Boolean)).size;
   const predictions = await readerDb.readerChoices.where("choiceType").equals("prediction").count();
-  const quizAttempts = await readerDb.readerQuizAttempts.count();
+  const [quizAttempts, libraryQuizAttempts, whatsappLogs, commerceProductViews] = await Promise.all([
+    readerDb.readerQuizAttempts.count(),
+    readerDb.libraryQuizAttempts.count(),
+    readerDb.libraryWhatsappLogs.count(),
+    readerDb.readerActivityLog.where("eventType").equals("commerce_product_viewed").count(),
+  ]);
+  const bookletEvents = await readerDb.readerActivityLog.where("eventType").anyOf("booklet_pack_imported", "library_pack_imported", "booklet_opened", "library_booklet_opened", "booklet_completed", "library_booklet_completed").count();
+  if (["episode_pack_imported", "pack_imported", "app_opened"].includes(log.eventType)) {
+    await addBadge({
+      id: `badge_${log.readerId}_gateway_reader`,
+      readerId: log.readerId,
+      badgeCode: "gateway_reader",
+      title: "Gateway Reader",
+      description: "Started the Empire of Trust reader journey on this device.",
+      icon: "GR",
+      earnedAt,
+    });
+  }
+  if (["episode_opened", "episode_completed", "episode_pack_imported", "pack_imported"].includes(log.eventType)) {
+    await addBadge({
+      id: `badge_${log.readerId}_empire_follower`,
+      readerId: log.readerId,
+      badgeCode: "empire_follower",
+      title: "Empire Follower",
+      description: "Engaged with the Empire of Trust episode storyline.",
+      icon: "EF",
+      earnedAt,
+    });
+  }
+  if (bookletEvents > 0) {
+    await addBadge({
+      id: `badge_${log.readerId}_booklet_explorer`,
+      readerId: log.readerId,
+      badgeCode: "booklet_explorer",
+      title: "Booklet Explorer",
+      description: "Opened or imported an independent Library booklet.",
+      icon: "BE",
+      earnedAt,
+    });
+  }
+  if (log.eventType === "quiz_started" || quizAttempts + libraryQuizAttempts > 0) {
+    await addBadge({
+      id: `badge_${log.readerId}_quiz_starter`,
+      readerId: log.readerId,
+      badgeCode: "quiz_starter",
+      title: "Quiz Starter",
+      description: "Started the first reader quiz.",
+      icon: "QS",
+      earnedAt,
+    });
+  }
+  if (log.eventType === "whatsapp_clicked" || whatsappLogs > 0) {
+    await addBadge({
+      id: `badge_${log.readerId}_whatsapp_contributor`,
+      readerId: log.readerId,
+      badgeCode: "whatsapp_contributor",
+      title: "WhatsApp Contributor",
+      description: "Used WhatsApp to respond from the reader shell.",
+      icon: "WC",
+      earnedAt,
+    });
+  }
+  if (["commerce_vendor_viewed", "commerce_product_viewed"].includes(log.eventType) || commerceProductViews > 0) {
+    await addBadge({
+      id: `badge_${log.readerId}_commerce_explorer`,
+      readerId: log.readerId,
+      badgeCode: "commerce_explorer",
+      title: "Commerce Explorer",
+      description: "Explored an Empire of Trust commerce listing.",
+      icon: "CE",
+      earnedAt,
+    });
+  }
   if (log.eventType === "episode_completed") {
     await addBadge({
       id: `badge_${log.readerId}_early_reader`,
@@ -1910,7 +2491,7 @@ export async function importPack(pack: EpisodePack, options: { replace?: boolean
     throw new Error(`Version ${existing.manifest.version} is already imported. Import a newer pack version.`);
   }
   await readerDb.episodePacks.put(pack);
-  await logActivity("pack_imported", {
+  await logActivity("episode_pack_imported", {
     episodeId: pack.content.episode.id,
     targetType: "episodePack",
     targetId: pack.manifest.packId,
@@ -2043,6 +2624,44 @@ export async function saveQuizAttempt(input: Omit<ReaderQuizAttempt, "id" | "rea
   return attempt;
 }
 
+export async function saveLibraryQuizAttempt(input: Omit<LibraryQuizAttempt, "id" | "readerId" | "completedAt" | "syncStatus">) {
+  const reader = await getOrCreateReaderIdentity();
+  const attempt: LibraryQuizAttempt = {
+    ...input,
+    id: id("library_quiz"),
+    readerId: reader.readerId,
+    completedAt: now(),
+    syncStatus: "pending",
+  };
+  await readerDb.libraryQuizAttempts.put(attempt);
+  await enqueue("libraryQuizAttempts", attempt.id, attempt as unknown as Record<string, unknown>, reader.readerId);
+  syncSoon();
+  return attempt;
+}
+
+export async function saveLibraryWhatsappLog(input: Omit<LibraryWhatsappLog, "id" | "readerId" | "createdAt" | "syncStatus">) {
+  const reader = await getOrCreateReaderIdentity();
+  const row: LibraryWhatsappLog = {
+    ...input,
+    id: id("library_whatsapp"),
+    readerId: reader.readerId,
+    createdAt: now(),
+    syncStatus: "pending",
+  };
+  await readerDb.libraryWhatsappLogs.put(row);
+  await enqueue("libraryWhatsappLogs", row.id, row as unknown as Record<string, unknown>, reader.readerId);
+  syncSoon();
+  return row;
+}
+
+export async function listLibraryQuizAttempts(bookletId: string) {
+  return readerDb.libraryQuizAttempts.where("bookletId").equals(bookletId).reverse().sortBy("completedAt");
+}
+
+export async function listLibraryWhatsappLogs(bookletId: string) {
+  return readerDb.libraryWhatsappLogs.where("bookletId").equals(bookletId).reverse().sortBy("createdAt");
+}
+
 export async function savePollVote(input: Omit<ReaderPollVote, "id" | "readerId" | "createdAt" | "syncStatus"> & { question: string }) {
   const reader = await getOrCreateReaderIdentity();
   const vote: ReaderPollVote = {
@@ -2112,15 +2731,32 @@ export async function refreshLocalRanking() {
 
 export async function getReaderProfileSummary() {
   const identity = await getOrCreateReaderIdentity();
-  const [rewards, badges, completedLogs, predictions, choices, participation, quizAttempts, pollVotes] = await Promise.all([
+  const [
+    rewards,
+    badges,
+    completedLogs,
+    bookletCompletedLogs,
+    predictions,
+    choices,
+    participation,
+    quizAttempts,
+    libraryQuizAttempts,
+    whatsappLogs,
+    pollVotes,
+    syncSummary,
+  ] = await Promise.all([
     readerDb.readerRewards.where("readerId").equals(identity.readerId).toArray(),
     readerDb.readerBadges.where("readerId").equals(identity.readerId).toArray(),
     readerDb.readerActivityLog.where("eventType").equals("episode_completed").toArray(),
+    readerDb.readerActivityLog.where("eventType").anyOf("booklet_completed", "library_booklet_completed").toArray(),
     readerDb.readerChoices.where("choiceType").equals("prediction").count(),
     readerDb.readerChoices.count(),
     readerDb.readerParticipation.where("readerId").equals(identity.readerId).toArray(),
     readerDb.readerQuizAttempts.where("readerId").equals(identity.readerId).toArray(),
+    readerDb.libraryQuizAttempts.where("readerId").equals(identity.readerId).toArray(),
+    readerDb.libraryWhatsappLogs.where("readerId").equals(identity.readerId).toArray(),
     readerDb.readerPollVotes.where("readerId").equals(identity.readerId).toArray(),
+    getReaderSyncSummary(),
   ]);
   const totalPoints = rewards.reduce((sum, reward) => sum + reward.points, 0);
   const ranking = await refreshLocalRanking();
@@ -2131,12 +2767,16 @@ export async function getReaderProfileSummary() {
     level: getReaderLevel(totalPoints),
     ranking,
     episodesCompleted: new Set(completedLogs.map((item) => item.episodeId).filter(Boolean)).size,
+    bookletsCompleted: new Set(bookletCompletedLogs.map((item) => item.targetId).filter(Boolean)).size,
     predictionsSubmitted: predictions,
     quizHistory: quizAttempts,
+    quizzesCompleted: quizAttempts.length + libraryQuizAttempts.length,
+    whatsappInteractions: whatsappLogs.length,
     pollParticipation: pollVotes,
     choicesMade: choices,
     participationScore: participation.reduce((sum, item) => sum + (item.scoreImpact ?? 1), 0),
-    localSyncStatus: "local-only",
+    syncSummary,
+    localSyncStatus: syncSummary.failed > 0 ? `${syncSummary.pending} pending / ${syncSummary.failed} failed` : `${syncSummary.pending} pending / ${syncSummary.synced} synced`,
   };
 }
 
@@ -2185,3 +2825,4 @@ export async function resetLocalReaderData() {
   await readerDb.delete();
   await readerDb.open();
 }
+

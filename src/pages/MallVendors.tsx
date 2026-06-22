@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { PageHeader } from "../components/PageHeader";
+import { SponsoredBadge } from "../components/SponsoredBadge";
 import { EmptyState, LoadingState } from "../components/States";
 import { listVendors } from "../lib/mallRepository";
 import type { EotVendor } from "../types";
@@ -31,13 +32,16 @@ export default function MallVendors() {
         <EmptyState title="No vendors found" message="No vendor storefronts match this search or cache." actionLabel="Import Pack" actionTo="/mall" />
       ) : (
         <section className="panel divide-y divide-white/10">
-          {filtered.map((vendor) => (
+          {filtered.map((vendor, index) => (
             <Link key={vendor.id} to={`/mall/vendors/${vendor.id}`} className="grid gap-3 p-4 hover:bg-white/5 sm:grid-cols-[88px_1fr]">
               <div className="h-20 border border-white/10 bg-black/30">
                 {vendor.logoUrl ? <img className="h-full w-full object-cover" src={vendor.logoUrl} alt="" /> : <div className="grid h-full place-items-center text-xs font-black text-signal">ITRED</div>}
               </div>
               <div className="min-w-0">
-                <p className="text-xs font-bold uppercase tracking-[0.16em] text-signal">{vendor.sector || "Storefront"}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-signal">{vendor.sector || "Storefront"}</p>
+                  {index < 2 && <SponsoredBadge label={index === 0 ? "Featured" : "Verified"} />}
+                </div>
                 <h2 className="mt-1 truncate text-xl font-black">{vendor.businessName}</h2>
                 <p className="mt-2 line-clamp-2 text-sm text-paper/60">{vendor.description || `${vendor.city} ${vendor.suburb}`}</p>
                 <p className="mt-2 text-xs font-bold uppercase tracking-[0.14em] text-paper/40">{vendor.productCount || 0} products / {vendor.branchCount || 1} branches</p>

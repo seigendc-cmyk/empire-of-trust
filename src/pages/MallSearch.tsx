@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { PageHeader } from "../components/PageHeader";
+import { SponsoredBadge } from "../components/SponsoredBadge";
 import { EmptyState, LoadingState } from "../components/States";
 import { searchMall } from "../lib/mallRepository";
 import type { EotProduct, EotProductCategory, EotVendor } from "../types";
@@ -46,9 +47,12 @@ export default function MallSearch() {
           {vendors.length > 0 && (
             <div className="panel divide-y divide-white/10">
               <div className="p-4"><h2 className="text-xl font-black">Vendors</h2></div>
-              {vendors.map((vendor) => (
+              {vendors.map((vendor, index) => (
                 <Link key={vendor.id} className="block p-4 hover:bg-white/5" to={`/mall/vendors/${vendor.id}`}>
-                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-signal">{vendor.sector}</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-xs font-bold uppercase tracking-[0.16em] text-signal">{vendor.sector}</p>
+                    {index === 0 && <SponsoredBadge label="Sponsored" />}
+                  </div>
                   <h3 className="mt-1 text-lg font-black">{vendor.businessName}</h3>
                   <p className="mt-1 text-sm text-paper/60">{vendor.city} {vendor.suburb}</p>
                 </Link>
@@ -58,9 +62,12 @@ export default function MallSearch() {
           {products.length > 0 && (
             <div className="panel divide-y divide-white/10">
               <div className="p-4"><h2 className="text-xl font-black">Products</h2></div>
-              {products.map((product) => (
+              {products.map((product, index) => (
                 <Link key={product.id} className="block p-4 hover:bg-white/5" to={`/mall/products/${product.id}`}>
-                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-signal">{product.brand || product.category}</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-xs font-bold uppercase tracking-[0.16em] text-signal">{product.brand || product.category}</p>
+                    {index === 0 && <SponsoredBadge label="Featured" />}
+                  </div>
                   <h3 className="mt-1 text-lg font-black">{product.name}</h3>
                   <p className="mt-1 text-sm text-paper/60">{product.currency} {Number(product.price || 0).toFixed(2)}</p>
                 </Link>

@@ -13,7 +13,7 @@ const moduleConfig: Record<StaffModule, { title: string; permission: string; act
   assets: { title: "Assets", permission: "assets.read", actions: [{ label: "Media Library", to: "/studio/assets/library", primary: true }, { label: "Upload", to: "/studio/assets/upload" }, { label: "Prompts", to: "/studio/assets/prompts" }] },
   story: { title: "Story", permission: "story.read", actions: [{ label: "Story Engine", to: "/studio/story-engine", primary: true }, { label: "Planner", to: "/studio/story-engine/episode-planner" }, { label: "Continuity", to: "/studio/story-engine/continuity" }] },
   production: { title: "Production", permission: "production.read", actions: [{ label: "Production", to: "/studio/production", primary: true }, { label: "Readiness", to: "/studio/production/readiness" }, { label: "Schedule", to: "/studio/production/schedule-board" }] },
-  analytics: { title: "Analytics", permission: "console.analytics.read", actions: [{ label: "Production Test", to: "/studio/production-test", primary: true }, { label: "Reader Rewards", to: "/reader/rewards" }] },
+  analytics: { title: "Analytics", permission: "analytics.read", actions: [{ label: "Executive Console", to: "/studio/analytics", primary: true }, { label: "Commerce", to: "/studio/analytics/commerce" }, { label: "Staff", to: "/studio/analytics/staff" }] },
   library: { title: "Library", permission: "library.read", actions: [{ label: "Library Catalogue", to: "/library", primary: true }, { label: "Studio Library", to: "/studio/library" }, { label: "Import Booklet", to: "/library/import" }] },
 };
 

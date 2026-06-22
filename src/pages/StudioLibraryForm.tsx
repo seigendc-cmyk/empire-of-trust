@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { PageHeader } from "../components/PageHeader";
 import { ErrorState, LoadingState } from "../components/States";
 import {
@@ -18,6 +18,8 @@ import type { LibraryBooklet, LibraryChapter, LibrarySection } from "../types";
 export default function StudioLibraryForm() {
   const { bookletId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const basePath = location.pathname.startsWith("/studio/booklets") ? "/studio/booklets" : "/studio/library";
   const [booklet, setBooklet] = useState<LibraryBooklet | null>(null);
   const [chapters, setChapters] = useState<LibraryChapter[]>([]);
   const [sections, setSections] = useState<LibrarySection[]>([]);
@@ -48,7 +50,7 @@ export default function StudioLibraryForm() {
     setError("");
     const id = await upsertLibraryBooklet(input);
     setMessage("Booklet saved.");
-    if (!bookletId) navigate(`/studio/library/${id}/edit`);
+    if (!bookletId) navigate(`${basePath}/${id}/edit`);
     else await load(id);
   }
 
@@ -61,7 +63,7 @@ export default function StudioLibraryForm() {
         eyebrow="Studio Library"
         title={booklet ? "Edit booklet" : "New independent booklet"}
         subtitle="Author non-EOT booklet content with its own chapters, sections, pack, and reader progress."
-        actions={[{ label: "Library", to: "/studio/library" }, ...(booklet ? [{ label: "Preview", to: `/studio/library/${booklet.id}/preview` }, { label: "Build Pack", to: `/studio/library/${booklet.id}/build-pack`, primary: true }] : [])]}
+        actions={[{ label: "Booklets", to: basePath }, ...(booklet ? [{ label: "Manuscript", to: `/studio/booklets/${booklet.id}/manuscript` }, { label: "Preview", to: `${basePath}/${booklet.id}/preview` }, { label: "Build Pack", to: `${basePath}/${booklet.id}/build-pack`, primary: true }] : [])]}
       />
       {message && <div className="border border-ledger bg-ledger/10 p-3 text-sm font-semibold text-ledger">{message}</div>}
       {error && <div className="border border-ember bg-ember/10 p-3 text-sm font-semibold text-ember">{error}</div>}

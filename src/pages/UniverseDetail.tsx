@@ -4,6 +4,7 @@ import { PageHeader } from "../components/PageHeader";
 import { MediaReferencePanel } from "../components/MediaReferencePanel";
 import { ErrorState, LoadingState } from "../components/States";
 import { logActivity } from "../lib/offlineDb";
+import { listProducts, listVendors } from "../lib/mallRepository";
 import {
   getUniverse,
   listActors,
@@ -13,7 +14,7 @@ import {
   listRelationships,
   listVehicles,
 } from "../lib/universeRepository";
-import type { EotActor, EotAsset, EotBusiness, EotCharacter, EotProperty, EotRelationship, EotVehicle } from "../types";
+import type { EotActor, EotAsset, EotBusiness, EotCharacter, EotProduct, EotProperty, EotRelationship, EotVehicle, EotVendor } from "../types";
 
 type Kind = "characters" | "actors" | "assets" | "businesses" | "properties" | "vehicles";
 type Entity = EotCharacter | EotActor | EotAsset | EotBusiness | EotProperty | EotVehicle;
@@ -52,6 +53,8 @@ export default function UniverseDetail({ kind }: { kind: Kind }) {
   const [businesses, setBusinesses] = useState<EotBusiness[]>([]);
   const [properties, setProperties] = useState<EotProperty[]>([]);
   const [vehicles, setVehicles] = useState<EotVehicle[]>([]);
+  const [commerceVendors, setCommerceVendors] = useState<EotVendor[]>([]);
+  const [commerceProducts, setCommerceProducts] = useState<EotProduct[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -62,13 +65,17 @@ export default function UniverseDetail({ kind }: { kind: Kind }) {
       listBusinesses(),
       listProperties(),
       listVehicles(),
-    ]).then(([value, rels, chars, biz, props, cars]) => {
+      listVendors(),
+      listProducts(),
+    ]).then(([value, rels, chars, biz, props, cars, vendorRows, productRows]) => {
       setEntity(value ?? null);
       setRelationships(rels);
       setCharacters(chars);
       setBusinesses(biz);
       setProperties(props);
       setVehicles(cars);
+      setCommerceVendors(vendorRows);
+      setCommerceProducts(productRows);
       if (kind === "characters" && id) logActivity("character_profile_opened", { targetType: "character", targetId: id }).catch(() => undefined);
     }).finally(() => setLoading(false));
   }, [id, kind]);
@@ -83,6 +90,8 @@ export default function UniverseDetail({ kind }: { kind: Kind }) {
 
   const relatedRelationships = relationships.filter((rel) => [rel.fromCharacterId, rel.toCharacterId, rel.businessId, rel.assetId, ...(rel.characterIds ?? [])].includes(entity.id));
   const commerceLinks = "sector" in entity ? [...(entity.vendorIds ?? []), ...(entity.vendorId ? [entity.vendorId] : [])] : [];
+  const linkedCommerceVendors = "sector" in entity ? commerceVendors.filter((vendor) => vendor.businessId === entity.id || vendor.linkedBusinessIds?.includes(entity.id) || commerceLinks.includes(vendor.id)) : [];
+  const linkedCommerceProducts = "sector" in entity ? commerceProducts.filter((product) => product.linkedBusinessIds?.includes(entity.id) || linkedCommerceVendors.some((vendor) => vendor.id === product.vendorId)) : [];
 
   return (
     <section className="page grid gap-4">
@@ -113,7 +122,15 @@ export default function UniverseDetail({ kind }: { kind: Kind }) {
         <section className="panel p-4">
           <h2 className="text-xl font-black">Commercial layer</h2>
           <p className="mt-2 text-sm leading-6 text-paper/60">Search iTred Mall for storefronts and products related to this business.</p>
-          <Link className="btn btn-primary mt-4 w-full sm:w-fit" to={`/mall/search?query=${encodeURIComponent(entity.name)}`}>Search mall</Link>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link className="btn btn-primary" to={linkedCommerceVendors[0] ? `/mall/vendors/${linkedCommerceVendors[0].id}` : `/mall/search?query=${encodeURIComponent(entity.name)}`}>Open storefront</Link>
+            <Link className="btn" to={`/mall/search?query=${encodeURIComponent(entity.name)}`}>Search mall</Link>
+          </div>
+          {linkedCommerceProducts.length > 0 && (
+            <div className="mt-4 grid gap-2">
+              {linkedCommerceProducts.slice(0, 5).map((product) => <Link key={product.id} className="border border-white/10 bg-black/20 p-3 text-sm font-bold text-paper/75" to={`/mall/products/${product.id}`}>{product.name} / {product.currency} {Number(product.price || 0).toFixed(2)}</Link>)}
+            </div>
+          )}
         </section>
       )}
       {"sector" in entity && <MediaReferencePanel entityType="business" entityId={entity.id} title="Logo, banner, marketing assets, and references" />}

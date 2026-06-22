@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { PageHeader } from "../components/PageHeader";
+import { SponsoredBadge } from "../components/SponsoredBadge";
 import { ErrorState, LoadingState } from "../components/States";
-import { getProduct, getVendor, listProductsByCategory } from "../lib/mallRepository";
+import { getProduct, getVendor, listProductsByCategory, logCommerceInterest } from "../lib/mallRepository";
 import type { EotProduct, EotVendor } from "../types";
 
 function whatsAppHref(number: string, message: string) {
@@ -18,6 +19,7 @@ export default function MallProductDetail() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    logCommerceInterest("product_viewed", { productId }).catch(() => undefined);
     getProduct(productId)
       .then(async (productRow) => {
         setProduct(productRow ?? null);
@@ -42,6 +44,10 @@ export default function MallProductDetail() {
   return (
     <section className="page grid gap-4">
       <PageHeader eyebrow={product.category || "Product"} title={product.name} subtitle={vendor ? `Sold by ${vendor.businessName}` : "Vendor pending"} actions={[{ label: "Mall", to: "/mall" }]} />
+      <div className="flex flex-wrap gap-2">
+        <SponsoredBadge label="Featured" />
+        {vendor && <SponsoredBadge label="Verified" />}
+      </div>
 
       <section className="panel grid gap-4 p-4 sm:grid-cols-[minmax(220px,360px)_1fr]">
         <div className="aspect-square border border-white/10 bg-black/30">
@@ -58,8 +64,8 @@ export default function MallProductDetail() {
             {product.tags?.map((tag) => <span key={tag} className="border border-white/10 px-2 py-1 text-xs font-bold uppercase tracking-[0.12em] text-paper/50">{tag}</span>)}
           </div>
           <div className="grid gap-2 sm:flex">
-            {whatsapp && <a className="btn btn-primary" href={whatsapp} target="_blank" rel="noreferrer">WhatsApp enquiry</a>}
-            {vendor?.phone && <a className="btn" href={`tel:${vendor.phone}`}>Call vendor</a>}
+            {whatsapp && <a className="btn btn-primary" href={whatsapp} target="_blank" rel="noreferrer" onClick={() => logCommerceInterest("whatsapp_clicked", { vendorId: vendor?.id, productId: product.id }).catch(() => undefined)}>WhatsApp enquiry</a>}
+            {vendor?.phone && <a className="btn" href={`tel:${vendor.phone}`} onClick={() => logCommerceInterest("call_clicked", { vendorId: vendor.id, productId: product.id }).catch(() => undefined)}>Call vendor</a>}
             {vendor && <Link className="btn" to={`/mall/vendors/${vendor.id}`}>Vendor storefront</Link>}
           </div>
         </div>

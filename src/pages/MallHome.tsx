@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { PageHeader } from "../components/PageHeader";
+import { SponsoredBadge } from "../components/SponsoredBadge";
 import { EmptyState, LoadingState } from "../components/States";
 import { importVendorPack, listCategories, listProducts, listVendors, validateVendorPack } from "../lib/mallRepository";
 import type { EotProduct, EotProductCategory, EotVendor } from "../types";
@@ -83,9 +84,12 @@ export default function MallHome() {
         <EmptyState title="No storefronts imported" message="Import a vendor pack or connect Firestore records to populate the mall." />
       ) : (
         <section className="panel divide-y divide-white/10">
-          {vendors.slice(0, 5).map((vendor) => (
+          {vendors.slice(0, 5).map((vendor, index) => (
             <Link key={vendor.id} className="grid gap-2 p-4 hover:bg-white/5" to={`/mall/vendors/${vendor.id}`}>
-              <p className="text-xs font-bold uppercase tracking-[0.16em] text-signal">{vendor.sector || "Vendor"}</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-signal">{vendor.sector || "Vendor"}</p>
+                {index === 0 && <SponsoredBadge label="Premium Partner" />}
+              </div>
               <h2 className="text-xl font-black">{vendor.businessName}</h2>
               <p className="text-sm text-paper/60">{vendor.city}{vendor.suburb ? ` / ${vendor.suburb}` : ""}</p>
             </Link>

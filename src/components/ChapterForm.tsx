@@ -28,6 +28,7 @@ export function ChapterForm({ episodeId, chapter, onSaved }: Props) {
           title: stringValue(formData, "title"),
           intro: stringValue(formData, "intro"),
           previousEpisodeBridge: stringValue(formData, "previousEpisodeBridge"),
+          previousSceneReview: stringValue(formData, "previousSceneReview"),
           emotionalTone: stringValue(formData, "emotionalTone"),
           sceneLocation: stringValue(formData, "sceneLocation"),
           scenePropertyId: stringValue(formData, "scenePropertyId"),
@@ -67,6 +68,10 @@ export function ChapterForm({ episodeId, chapter, onSaved }: Props) {
       <label className="sm:col-span-2">
         <span className="label">Previous bridge</span>
         <textarea className="field min-h-20" name="previousEpisodeBridge" defaultValue={chapter?.previousEpisodeBridge ?? ""} />
+      </label>
+      <label className="sm:col-span-2">
+        <span className="label">Previous scene review</span>
+        <textarea className="field min-h-20" name="previousSceneReview" defaultValue={chapter?.previousSceneReview ?? ""} />
       </label>
       <label>
         <span className="label">Tone</span>

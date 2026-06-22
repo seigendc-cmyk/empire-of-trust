@@ -420,7 +420,8 @@ export async function logCommerceInterest(eventType: EotCommerceInterestLog["eve
     syncStatus: "pending",
   };
   await readerDb.commerceInterestLog.put(log);
-  await logActivity("interactive_link_clicked", { targetType: "commerce", targetId: input.productId || input.vendorId || input.searchTerm || eventType, metadata: { eventType, ...input.metadata } }, reader);
+  const activityType = eventType === "vendor_viewed" ? "commerce_vendor_viewed" : eventType === "product_viewed" ? "commerce_product_viewed" : eventType === "whatsapp_clicked" ? "whatsapp_clicked" : "interactive_link_clicked";
+  await logActivity(activityType, { targetType: "commerce", targetId: input.productId || input.vendorId || input.searchTerm || eventType, metadata: { eventType, ...input.metadata } }, reader);
   return log;
 }
 

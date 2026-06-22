@@ -90,6 +90,8 @@ export default function LibraryImport() {
                 <Info label="bookletCode" value={pending.pack.manifest.bookletCode} />
                 <Info label="category" value={pending.pack.manifest.category} />
                 <Info label="chapters" value={String(pending.pack.content.booklet.chapters.length)} />
+                <Info label="quizzes" value={String(pending.pack.content.quizzes?.length ?? 0)} />
+                <Info label="WhatsApp prompts" value={String(pending.pack.content.whatsappPrompts?.length ?? 0)} />
               </dl>
             </section>
             <div className="flex flex-wrap gap-2">

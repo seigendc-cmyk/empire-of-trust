@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useLocation, useParams } from "react-router-dom";
 import { PageHeader } from "../components/PageHeader";
 import { ErrorState, LoadingState } from "../components/States";
 import { buildLibraryBookletPack, downloadLibraryPack, getLibraryContent, saveLibraryPackMetadata } from "../lib/libraryRepository";
-import type { LibraryBooklet, LibraryBookletPack, LibraryChapter, LibrarySection } from "../types";
+import type { LibraryBooklet, LibraryBookletExtras, LibraryBookletPack, LibraryChapter, LibrarySection } from "../types";
 
 export default function StudioLibraryBuildPack() {
   const { bookletId } = useParams();
+  const location = useLocation();
+  const basePath = location.pathname.startsWith("/studio/booklets") ? "/studio/booklets" : "/studio/library";
   const [booklet, setBooklet] = useState<LibraryBooklet | null>(null);
   const [chapters, setChapters] = useState<LibraryChapter[]>([]);
   const [sections, setSections] = useState<LibrarySection[]>([]);
+  const [extras, setExtras] = useState<LibraryBookletExtras | null>(null);
   const [version, setVersion] = useState("1.0.0");
   const [pack, setPack] = useState<LibraryBookletPack | null>(null);
   const [loading, setLoading] = useState(true);
@@ -23,6 +26,7 @@ export default function StudioLibraryBuildPack() {
       setBooklet(content.booklet);
       setChapters(content.chapters);
       setSections(content.sections);
+      setExtras(content.extras);
     }).finally(() => setLoading(false));
   }, [bookletId]);
 
@@ -34,9 +38,11 @@ export default function StudioLibraryBuildPack() {
     if (sections.length === 0) next.push({ level: "error", message: "Add at least one section." });
     if (booklet?.status !== "published") next.push({ level: "warning", message: "Booklet is not marked published yet." });
     if (!booklet?.coverImageUrl) next.push({ level: "warning", message: "Cover image URL is empty." });
+    if (!extras?.quizzes.length) next.push({ level: "warning", message: "No booklet quizzes are configured." });
+    if (!extras?.whatsappPrompts.length) next.push({ level: "warning", message: "No WhatsApp response prompts are configured." });
     next.push({ level: "warning", message: "Signature is a frontend placeholder." });
     return next;
-  }, [booklet, chapters.length, sections.length]);
+  }, [booklet, chapters.length, sections.length, extras]);
   const hasErrors = issues.some((issue) => issue.level === "error");
   const fileName = pack ? `${pack.manifest.packId}-v${pack.manifest.version}.json` : `LIB-${booklet?.bookletCode || "BOOKLET"}-v${version}.json`;
 
@@ -46,7 +52,7 @@ export default function StudioLibraryBuildPack() {
     setError("");
     setMessage("");
     try {
-      const next = await buildLibraryBookletPack(booklet, chapters, sections, version);
+      const next = await buildLibraryBookletPack(booklet, chapters, sections, version, extras ?? undefined);
       setPack(next);
       return next;
     } catch (err) {
@@ -62,7 +68,7 @@ export default function StudioLibraryBuildPack() {
 
   return (
     <section className="page grid gap-5">
-      <PageHeader eyebrow={booklet.bookletCode} title="Build booklet pack" subtitle="Generate independent `library_booklet` JSON for offline Reader Library import." actions={[{ label: "Edit", to: `/studio/library/${bookletId}/edit` }, { label: "Preview", to: `/studio/library/${bookletId}/preview` }]} />
+      <PageHeader eyebrow={booklet.bookletCode} title="Build booklet pack" subtitle="Generate independent `library_booklet` JSON for offline Reader Library import." actions={[{ label: "Edit", to: `${basePath}/${bookletId}/edit` }, { label: "Media", to: `/studio/booklets/${bookletId}/media` }, { label: "Quizzes", to: `/studio/booklets/${bookletId}/quizzes` }, { label: "Preview", to: `${basePath}/${bookletId}/preview` }]} />
       {message && <div className="border border-ledger bg-ledger/10 p-3 text-sm font-semibold text-ledger">{message}</div>}
       {error && <div className="border border-ember bg-ember/10 p-3 text-sm font-semibold text-ember">{error}</div>}
 
@@ -72,6 +78,7 @@ export default function StudioLibraryBuildPack() {
           <p>Status: {booklet.status}</p>
           <p>File name: {fileName}</p>
           <p>Pack type: library_booklet</p>
+          <p>Extras: {extras?.images.length ?? 0} images, {extras?.quizzes.length ?? 0} quizzes, {extras?.whatsappPrompts.length ?? 0} WhatsApp prompts</p>
         </div>
       </section>
 

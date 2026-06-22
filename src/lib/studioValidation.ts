@@ -6,9 +6,15 @@ export interface EpisodeInput {
   episodeNumber: number;
   releaseWeekNumber: number;
   episodeIdentifier: string;
+  episodeCode?: string;
   title: string;
   synopsis: string;
+  introTitle?: string;
+  introNarrative?: string;
+  previousEpisodeBridge?: string;
   storyDate: string;
+  settingDate?: string;
+  mainConflict?: string;
   status: EpisodeStatus;
   requiredLicencePlan: string;
   previousEpisodeId: string;
@@ -22,6 +28,8 @@ export interface EpisodeInput {
   locationContinuityNotes?: string;
   vehicleContinuityNotes?: string;
   culturalContinuityNotes: string;
+  endingHook?: string;
+  nextEpisodeBridge?: string;
 }
 
 export function episodeInputFromForm(formData: FormData): EpisodeInput {
@@ -32,9 +40,15 @@ export function episodeInputFromForm(formData: FormData): EpisodeInput {
     episodeNumber,
     releaseWeekNumber: numberValue(formData, "releaseWeekNumber"),
     episodeIdentifier: (stringValue(formData, "episodeIdentifier") || episodeIdentifier(seasonNumber, episodeNumber)).trim(),
+    episodeCode: stringValue(formData, "episodeCode").trim(),
     title: stringValue(formData, "title").trim(),
     synopsis: stringValue(formData, "synopsis").trim(),
+    introTitle: stringValue(formData, "introTitle").trim(),
+    introNarrative: stringValue(formData, "introNarrative").trim(),
+    previousEpisodeBridge: stringValue(formData, "previousEpisodeBridge").trim(),
     storyDate: stringValue(formData, "storyDate"),
+    settingDate: stringValue(formData, "settingDate").trim(),
+    mainConflict: stringValue(formData, "mainConflict").trim(),
     status: stringValue(formData, "status", "draft") as EpisodeStatus,
     requiredLicencePlan: stringValue(formData, "requiredLicencePlan", "reader").trim(),
     previousEpisodeId: stringValue(formData, "previousEpisodeId").trim(),
@@ -48,6 +62,8 @@ export function episodeInputFromForm(formData: FormData): EpisodeInput {
     locationContinuityNotes: stringValue(formData, "locationContinuityNotes").trim(),
     vehicleContinuityNotes: stringValue(formData, "vehicleContinuityNotes").trim(),
     culturalContinuityNotes: stringValue(formData, "culturalContinuityNotes").trim(),
+    endingHook: stringValue(formData, "endingHook").trim(),
+    nextEpisodeBridge: stringValue(formData, "nextEpisodeBridge").trim(),
   };
 }
 

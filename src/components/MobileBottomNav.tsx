@@ -1,7 +1,7 @@
 import { NavLink } from "react-router-dom";
 
 const items = [
-  { to: "/", label: "Home", glyph: "H" },
+  { to: "/home", label: "Home", glyph: "H" },
   { to: "/reader", label: "Read", glyph: "R" },
   { to: "/library", label: "Library", glyph: "L" },
   { to: "/participation", label: "Part", glyph: "P" },

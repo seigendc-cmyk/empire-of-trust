@@ -1,5 +1,5 @@
 import { signOut } from "firebase/auth";
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import { auth } from "../lib/firebase";
 import type { StudioPermission } from "../lib/staffPermissions";
 import { useAuth } from "../state/AuthContext";
@@ -13,7 +13,10 @@ import { ThreeDotMenu } from "./ThreeDotMenu";
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, hasPermission } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const location = useLocation();
+  const isWelcomeRoute = location.pathname === "/";
   const menuItems: Array<{ label: string; href?: string; onSelect?: () => void; permission?: StudioPermission }> = [
+    { label: "Home", href: "/home" },
     { label: "Reader", href: "/reader" },
     { label: "Library", href: "/library" },
     { label: "Participation", href: "/participation" },
@@ -24,6 +27,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     { label: "Participation", href: "/reader/participation" },
     { label: "Licence", href: "/licence" },
     { label: "Activate Licence", href: "/licence/activate" },
+    { label: "Meet Characters", href: "/characters/meet" },
     { label: "Characters", href: "/characters" },
     { label: "Actors", href: "/actors" },
     { label: "Properties", href: "/properties" },
@@ -35,11 +39,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     { label: "Corporate Network", href: "/corporate-network" },
     { label: "iTred Mall", href: "/mall", permission: "mall.read" },
     { label: "Mall Vendors", href: "/mall/vendors", permission: "mall.read" },
+    { label: "Mall Products", href: "/mall/products", permission: "mall.read" },
     { label: "Mall Search", href: "/mall/search", permission: "mall.read" },
+    { label: "Import Vendor Pack", href: "/mall/import-vendor-pack", permission: "mall.read" },
+    { label: "Vendor Advertising", href: "/vendor/advertising" },
     { label: "Staff Dashboard", href: "/staff/dashboard", permission: "studio.access" },
     { label: "Staff Library", href: "/staff/library", permission: "library.read" },
     { label: "Studio", href: "/studio", permission: "staff.manage" },
     { label: "Studio Library", href: "/studio/library", permission: "library.read" },
+    { label: "Booklet Builder", href: "/studio/booklets", permission: "library.read" },
     { label: "Studio Properties", href: "/studio/properties", permission: "properties.read" },
     { label: "Studio Vehicles", href: "/studio/vehicles", permission: "vehicles.read" },
     { label: "Studio Actors", href: "/studio/actors", permission: "actors.read" },
@@ -48,6 +56,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     { label: "Asset Library", href: "/studio/assets/library", permission: "assets.read" },
     { label: "Asset Upload", href: "/studio/assets/upload", permission: "assets.upload" },
     { label: "Asset Prompts", href: "/studio/assets/prompts", permission: "assets.prompts.manage" },
+    { label: "Commerce", href: "/studio/commerce", permission: "commerce.read" },
+    { label: "Advertising Desk", href: "/studio/advertising", permission: "advertising.manage" },
+    { label: "Ad Analytics", href: "/studio/advertising/analytics", permission: "advertising.analytics.read" },
+    { label: "Analytics", href: "/studio/analytics", permission: "analytics.read" },
     { label: "Timeline", href: "/studio/timeline", permission: "timeline.read" },
     { label: "Continuity", href: "/studio/continuity", permission: "continuity.read" },
     { label: "Staff Access", href: "/studio/staff", permission: "staff.manage" },
@@ -65,12 +77,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   ];
   const visibleMenuItems = menuItems.filter((item) => !item.permission || (user && hasPermission(item.permission)));
 
+  if (isWelcomeRoute) {
+    return <main className="shell min-h-dvh overflow-hidden">{children}</main>;
+  }
+
   return (
     <div className="shell app-frame">
       <DesktopSidebar />
       <div className="app-main">
         <header className="app-header">
-          <NavLink to="/" className="flex min-w-0 flex-1 items-center gap-3">
+          <NavLink to="/home" className="flex min-w-0 flex-1 items-center gap-3">
             <span className="grid h-9 w-9 shrink-0 place-items-center border border-signal bg-signal text-sm font-black text-ink">EOT</span>
             <span className="min-w-0">
               <span className="block truncate text-sm font-black">Empire of Trust</span>

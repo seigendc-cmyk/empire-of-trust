@@ -2,12 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { OfflineStatusBadge } from "../components/OfflineStatusBadge";
 import { DramaPollCard } from "../components/DramaPollCard";
+import { ChapterBusinessSpotlight } from "../components/ChapterBusinessSpotlight";
 import { PredictionCard } from "../components/PredictionCard";
 import { RewardToast } from "../components/RewardToast";
 import { ErrorState, LoadingState } from "../components/States";
 import { parseJsonList } from "../lib/packs";
 import { getImportedPack, getReaderSettings, getReadingProgress, logActivity, saveReadingProgress, saveReaderSettings, type ReaderSettings, type ReadingProgress } from "../lib/offlineDb";
-import type { EpisodePack } from "../types";
+import type { EpisodePack, ImageSlot } from "../types";
 
 type PackParagraph = EpisodePack["content"]["episode"]["chapters"][number]["paragraphs"][number];
 
@@ -45,6 +46,9 @@ export default function ReaderChapter() {
 
   if (loading) return <LoadingState label="Opening offline chapter..." />;
   if (!pack || !episodeId || !chapterId || !chapter) return <ErrorState title="Chapter not found offline" message="Return to the episode and choose a stored chapter." />;
+  const shouldAvoidChapterSpotlight = ["dialogue", "emotional", "romance", "cliffhanger"].some((term) =>
+    [chapter.emotionalTone, pack.content.episode.endingHook].join(" ").toLowerCase().includes(term),
+  );
 
   async function markProgress(paragraph: PackParagraph) {
     const nextProgress = {
@@ -102,6 +106,7 @@ export default function ReaderChapter() {
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-signal">Chapter {chapter.chapterNumber}</p>
           <h2 className="mt-2 font-serif text-3xl font-bold leading-tight">{chapter.title}</h2>
           {chapter.intro && <p className="mt-4 text-base leading-7 text-paper/70">{chapter.intro}</p>}
+          {chapter.previousSceneReview && <p className="mt-4 border-l-2 border-signal pl-3 text-sm leading-6 text-muted">{chapter.previousSceneReview}</p>}
           <div className="mt-5 grid gap-2 border border-white/10 bg-black/20 p-3 text-sm font-semibold">
             <label>
               <span className="label">Font size</span>
@@ -158,13 +163,22 @@ export default function ReaderChapter() {
                   Mark
                 </button>
               </div>
-              <p className={`mt-3 font-serif leading-8 text-paper/90 ${settings.fontSize === "small" ? "text-base" : settings.fontSize === "large" ? "text-xl" : "text-[1.12rem]"}`}>{paragraph.body}</p>
+              {(paragraph.imageSlots ?? []).filter((slot) => slot.displayMode === "chapter-header" || slot.displayMode === "background").map((slot) => <ImageFrame key={slot.id} slot={slot} className="mt-4 min-h-64" />)}
+              <p className={`mt-3 font-serif leading-8 text-paper/90 ${settings.fontSize === "small" ? "text-base" : settings.fontSize === "large" ? "text-xl" : "text-[1.12rem]"}`}>{paragraph.narrativeText || paragraph.body}</p>
+              {(paragraph.dialogueCues ?? []).map((cue, index) => (
+                <blockquote key={`${key}-cue-${index}`} className="mt-3 border-l-2 border-signal bg-black/20 p-3 font-serif text-sm leading-6 text-muted">
+                  {cue}
+                </blockquote>
+              ))}
+              {(paragraph.imageSlots ?? []).filter((slot) => slot.displayMode === "inline" || slot.displayMode === "gallery").map((slot) => <ImageFrame key={slot.id} slot={slot} className="mt-4 min-h-56" />)}
               {settings.showMetadata && (
                 <div className="mt-4 grid gap-2 text-xs uppercase tracking-[0.12em] text-paper/45 sm:grid-cols-3">
                   {paragraph.scenePrompt && <span>Scene available</span>}
                   {paragraph.cameraDirection && <span>Camera: {paragraph.cameraDirection}</span>}
+                  {paragraph.cinematicDirection && <span>Direction: {paragraph.cinematicDirection}</span>}
                   {paragraph.emotionalTone && <span>Tone: {paragraph.emotionalTone}</span>}
                   {paragraph.culturalDetail && <span>Culture: {paragraph.culturalDetail}</span>}
+                  {paragraph.culturalContinuityNote && <span>Cultural continuity: {paragraph.culturalContinuityNote}</span>}
                 </div>
               )}
               {settings.showImagePrompts && (paragraph.imagePrompt || paragraph.scenePrompt) && (
@@ -174,6 +188,7 @@ export default function ReaderChapter() {
                     {paragraph.imagePrompt && <p><span className="font-bold text-paper">Image:</span> {paragraph.imagePrompt}</p>}
                     {paragraph.scenePrompt && <p><span className="font-bold text-paper">Scene:</span> {paragraph.scenePrompt}</p>}
                     {paragraph.businessContinuityNote && <p><span className="font-bold text-paper">Continuity:</span> {paragraph.businessContinuityNote}</p>}
+                    {paragraph.culturalContinuityNote && <p><span className="font-bold text-paper">Culture:</span> {paragraph.culturalContinuityNote}</p>}
                   </div>
                 </details>
               )}
@@ -219,11 +234,47 @@ export default function ReaderChapter() {
           );
         })}
 
+        {!nextChapter && (pack.content.episode.endingHook || pack.content.episode.nextEpisodeBridgeText) && (
+          <section className="panel border-signal p-4">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-signal">Episode ending</p>
+            {pack.content.episode.endingHook && <h2 className="mt-2 text-xl font-black text-app">{pack.content.episode.endingHook}</h2>}
+            {pack.content.episode.nextEpisodeBridgeText && <p className="mt-3 text-sm leading-6 text-muted">{pack.content.episode.nextEpisodeBridgeText}</p>}
+          </section>
+        )}
+
+        {nextChapter && <ChapterBusinessSpotlight disabled={shouldAvoidChapterSpotlight} />}
+
         <nav className="grid gap-3 border-t border-white/10 pt-5 sm:grid-cols-2">
           {previousChapter ? <Link className="btn" to={`/reader/${episodeId}/chapter/${previousChapter.id}`}>Previous chapter</Link> : <span />}
           {nextChapter ? <Link className="btn btn-primary" to={`/reader/${episodeId}/chapter/${nextChapter.id}`}>Next chapter</Link> : <Link className="btn btn-primary" to={`/reader/${episodeId}`} onClick={completeEpisode}>Episode complete</Link>}
         </nav>
       </article>
     </section>
+  );
+}
+
+function ImageFrame({ slot, className = "" }: { slot: ImageSlot; className?: string }) {
+  const src = slot.firebaseStoragePath || slot.fallbackImagePath || "";
+  return (
+    <figure className={`surface-muted border-app overflow-hidden border ${className}`}>
+      {src ? (
+        <img
+          className="h-full min-h-[inherit] w-full object-cover"
+          src={src}
+          alt={slot.altText || slot.characterName || "Episode illustration"}
+          onError={(event) => {
+            if (slot.fallbackImagePath && event.currentTarget.src !== slot.fallbackImagePath) event.currentTarget.src = slot.fallbackImagePath;
+          }}
+        />
+      ) : (
+        <div className="grid h-full place-items-center p-4 text-muted">Image pending</div>
+      )}
+      {(slot.characterName || slot.imagePrompt) && (
+        <figcaption className="border-app border-t p-3 text-xs leading-5 text-muted">
+          {slot.characterName && <span className="font-bold text-app">{slot.characterName}: </span>}
+          {slot.imagePrompt}
+        </figcaption>
+      )}
+    </figure>
   );
 }

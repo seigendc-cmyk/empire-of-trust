@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { OfflineStatusBadge } from "../components/OfflineStatusBadge";
+import { EpisodeSponsorCard } from "../components/EpisodeSponsorCard";
 import { PageHeader } from "../components/PageHeader";
 import { ErrorState, LoadingState } from "../components/States";
 import { canOpenPack } from "../lib/licenceRepository";
@@ -56,17 +57,29 @@ export default function ReaderEpisode() {
       <PageHeader
         eyebrow={pack.manifest.episodeIdentifier}
         title={pack.manifest.title}
-        subtitle={pack.content.episode.synopsis}
+        subtitle={pack.content.episode.introNarrative || pack.content.episode.synopsis}
         actions={[
           ...(continueChapterId ? [{ label: progress ? "Continue" : "Start", to: `/reader/${episodeId}/chapter/${continueChapterId}`, primary: true }] : []),
           { label: "Import", to: "/reader/import" },
         ]}
       />
+      <EpisodeSponsorCard episodeId={episodeId} />
       <div className="panel p-4">
         <div className="flex items-center justify-between gap-3">
           <OfflineStatusBadge />
           <span className="text-xs font-bold uppercase tracking-[0.12em] text-paper/45">Version {pack.manifest.version}</span>
         </div>
+        {(pack.content.episode.mainConflict || pack.content.episode.previousEpisodeBridge || pack.content.episode.continuityPrep?.activeCharacters.length) && (
+          <div className="mt-4 grid gap-3 border-l-2 border-signal pl-3">
+            {pack.content.episode.mainConflict && <p className="text-sm font-bold text-app">{pack.content.episode.mainConflict}</p>}
+            {pack.content.episode.previousEpisodeBridge && <p className="text-sm leading-6 text-muted">{pack.content.episode.previousEpisodeBridge}</p>}
+            {!!pack.content.episode.continuityPrep?.activeCharacters.length && (
+              <div className="flex flex-wrap gap-2">
+                {pack.content.episode.continuityPrep.activeCharacters.map((name) => <span key={name} className="status-badge border-signal text-signal">{name}</span>)}
+              </div>
+            )}
+          </div>
+        )}
         {progress && (
           <p className="mt-4 border-l-2 border-signal pl-3 text-sm leading-6 text-paper/70">
             Saved at chapter {chapters.find((chapter) => chapter.id === progress.chapterId)?.chapterNumber ?? "-"}.

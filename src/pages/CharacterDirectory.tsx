@@ -30,7 +30,7 @@ export default function CharacterDirectory() {
         eyebrow="Character Universe"
         title="Master character database"
         subtitle="Reusable character entities for episodes, chapters, paragraphs, actors, businesses, assets, production schedules, and relationship intelligence."
-        actions={[{ label: "New Character", to: "/characters/new", primary: true }, { label: "Relationships", to: "/characters/relationships" }, { label: "Timeline", to: "/characters/timeline" }]}
+        actions={[{ label: "New Character", to: "/characters/new", primary: true }, { label: "Meet Characters", to: "/characters/meet" }, { label: "Relationships", to: "/characters/relationships" }, { label: "Timeline", to: "/characters/timeline" }]}
       />
       <section className="grid gap-3 sm:grid-cols-[1fr_180px]">
         <input className="field" placeholder="Search by name, nickname, occupation, business, role, or status" value={search} onChange={(event) => setSearch(event.currentTarget.value)} />

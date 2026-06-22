@@ -9,9 +9,15 @@ export interface Episode {
   episodeNumber: number;
   releaseWeekNumber: number;
   episodeIdentifier: string;
+  episodeCode?: string;
   title: string;
   synopsis: string;
+  introTitle?: string;
+  introNarrative?: string;
+  previousEpisodeBridge?: string;
   storyDate: string;
+  settingDate?: string;
+  mainConflict?: string;
   status: EpisodeStatus;
   requiredLicencePlan: string;
   previousEpisodeId: string;
@@ -22,11 +28,16 @@ export interface Episode {
   activeProperties?: string[];
   activeVehicles?: string[];
   businessContinuityNotes: string;
+  businessNotes?: string[];
   businessConflictNotes?: string;
   propertyContinuityNotes?: string;
   locationContinuityNotes?: string;
   vehicleContinuityNotes?: string;
   culturalContinuityNotes: string;
+  continuityNotes?: string[];
+  culturalNotes?: string[];
+  endingHook?: string;
+  nextEpisodeBridge?: string;
   createdAt: FirestoreDate;
   updatedAt: FirestoreDate;
 }
@@ -36,8 +47,11 @@ export interface Chapter {
   episodeId: string;
   chapterNumber: number;
   title: string;
+  chapterTitle?: string;
   intro: string;
+  chapterIntro?: string;
   previousEpisodeBridge: string;
+  previousSceneReview?: string;
   emotionalTone: string;
   sceneLocation: string;
   scenePropertyId?: string;
@@ -54,12 +68,16 @@ export interface Paragraph {
   chapterId: string;
   paragraphNumber: number;
   body: string;
+  narrativeText?: string;
   dialogueJson: string;
+  dialogueCues?: string[];
   imagePrompt: string;
   scenePrompt: string;
   cameraDirection: string;
+  cinematicDirection?: string;
   emotionalTone: string;
   culturalDetail: string;
+  culturalContinuityNote?: string;
   businessContinuityNote: string;
   interactiveLinksJson: string;
   mentionedCharacterIds?: string[];
@@ -69,8 +87,49 @@ export interface Paragraph {
   businessDecisionPrompt?: string;
   propertyInteractionPrompt?: string;
   vehicleInteractionPrompt?: string;
+  imageSlots?: ImageSlot[];
   createdAt: FirestoreDate;
   updatedAt: FirestoreDate;
+}
+
+export interface ImageSlot {
+  id: string;
+  imageType: "character" | "scene" | "illustration" | "location" | "asset";
+  characterName?: string;
+  firebaseStoragePath?: string;
+  fallbackImagePath?: string;
+  imagePrompt?: string;
+  altText: string;
+  displayMode: "inline" | "hero" | "chapter-header" | "background" | "gallery";
+}
+
+export interface CharacterAgeCheck {
+  characterName: string;
+  characterKey: string;
+  baselineDate: string;
+  baselineAge: number;
+  currentStoryAge: number;
+  ageProgression: string;
+}
+
+export interface CharacterImageCheck {
+  characterName: string;
+  characterKey: string;
+  mainImagePath: string;
+  portraitImagePath: string;
+  placeholderPath: string;
+}
+
+export interface ContinuityPrep {
+  previousEpisodeConnection: string;
+  activeCharacters: string[];
+  characterAgeCheck: CharacterAgeCheck[];
+  characterImageCheck: CharacterImageCheck[];
+  mainConflict: string;
+  businessContinuityNotes: string[];
+  culturalContinuityNotes: string[];
+  chapterOutline: string[];
+  illustrationPlan: string[];
 }
 
 export interface EpisodePack {
@@ -99,28 +158,41 @@ export interface EpisodePack {
       episodeNumber: number;
       releaseWeekNumber: number;
       episodeIdentifier: string;
+      episodeCode?: string;
       storyDate: string;
+      settingDate?: string;
       status: EpisodeStatus;
       requiredLicencePlan: string;
       previousEpisodeId: string;
       nextEpisodeId: string;
+      introTitle?: string;
+      introNarrative?: string;
+      previousEpisodeBridge?: string;
+      mainConflict?: string;
+      endingHook?: string;
+      nextEpisodeBridgeText?: string;
       activeCharacters: string;
       activeCharacterIds?: string[];
       activeBusinesses?: string[];
       activeProperties?: string[];
       activeVehicles?: string[];
       businessContinuityNotes: string;
+      businessNotes?: string[];
       businessConflictNotes?: string;
       propertyContinuityNotes?: string;
       locationContinuityNotes?: string;
       vehicleContinuityNotes?: string;
       culturalContinuityNotes: string;
+      culturalNotes?: string[];
+      continuityPrep?: ContinuityPrep;
+      imageSlots?: ImageSlot[];
       chapters: Array<{
         id: string;
         chapterNumber: number;
         title: string;
         intro: string;
         previousEpisodeBridge: string;
+        previousSceneReview?: string;
         emotionalTone?: string;
         sceneLocation?: string;
         scenePropertyId?: string;
@@ -131,14 +203,19 @@ export interface EpisodePack {
           id: string;
           paragraphNumber: number;
           body: string;
+          narrativeText?: string;
           dialogue: unknown[];
+          dialogueCues?: string[];
           imagePrompt: string;
           scenePrompt: string;
           cameraDirection: string;
+          cinematicDirection?: string;
           emotionalTone: string;
           culturalDetail: string;
+          culturalContinuityNote?: string;
           businessContinuityNote: string;
           interactiveLinks: unknown[];
+          imageSlots?: ImageSlot[];
           mentionedCharacterIds?: string[];
           mentionedBusinesses?: string[];
           mentionedProperties?: string[];
@@ -191,6 +268,141 @@ export interface BookPack {
   };
 }
 
+export type EotBookletStatus = "draft" | "review" | "approved" | "published" | "archived";
+
+export interface EotBooklet {
+  id: string;
+  bookletCode: string;
+  title: string;
+  subtitle: string;
+  author: string;
+  publisher: string;
+  tagline: string;
+  edition: string;
+  publicationDate: string;
+  category: string;
+  language: string;
+  description: string;
+  coverImageUrl: string;
+  backCoverImageUrl: string;
+  bannerImageUrl: string;
+  libraryThumbnailUrl: string;
+  ageRating: string;
+  requiredLicencePlan: string;
+  isPartOfEotStory: false;
+  status: EotBookletStatus;
+  createdAt: FirestoreDate;
+  updatedAt: FirestoreDate;
+}
+
+export type EotBookletCoverImageKind = "front_cover" | "back_cover" | "banner" | "library_thumbnail";
+
+export interface EotBookletCoverImage {
+  id: string;
+  bookletId: string;
+  imageKind: EotBookletCoverImageKind;
+  imageUrl: string;
+  storagePath: string;
+  fileName: string;
+  contentType: string;
+  fileSize: number;
+  source: "uploaded" | "generated" | "external";
+  width?: number;
+  height?: number;
+  createdAt: FirestoreDate;
+  updatedAt: FirestoreDate;
+}
+
+export interface EotBookletMedia {
+  id: string;
+  bookletId: string;
+  chapterId?: string;
+  sectionId?: string;
+  mediaType: "cover" | "illustration" | "image" | "diagram" | "activity" | "other";
+  title: string;
+  caption: string;
+  credit: string;
+  credits?: string;
+  altText: string;
+  imagePrompt: string;
+  downloadUrl: string;
+  imageUrl?: string;
+  storagePath?: string;
+  displayMode: "cover" | "inline" | "full_width" | "gallery" | "background";
+  fileName: string;
+  contentType: string;
+  fileSize: number;
+  createdAt: FirestoreDate;
+  updatedAt: FirestoreDate;
+}
+
+export type EotBookletQuizQuestionType = "multiple_choice" | "true_false" | "short_answer";
+
+export interface EotBookletQuizQuestion {
+  id: string;
+  questionType: EotBookletQuizQuestionType;
+  question: string;
+  options: string[];
+  correctAnswer: string;
+  explanation: string;
+  points: number;
+}
+
+export interface EotBookletQuiz {
+  id: string;
+  bookletId: string;
+  chapterId?: string;
+  title: string;
+  description: string;
+  passMark: number;
+  points: number;
+  questions: EotBookletQuizQuestion[];
+  createdAt: FirestoreDate;
+  updatedAt: FirestoreDate;
+}
+
+export type EotBookletEngagementType = "feedback" | "submit_answers" | "ask_question" | "join_community" | "request_help" | "send_feedback" | "ask_questions";
+
+export interface EotBookletEngagement {
+  id: string;
+  bookletId: string;
+  chapterId?: string;
+  sectionId?: string;
+  ctaType: EotBookletEngagementType;
+  purpose: EotBookletEngagementType;
+  buttonLabel: string;
+  whatsappNumber: string;
+  messageTemplate: string;
+  createdAt: FirestoreDate;
+  updatedAt: FirestoreDate;
+}
+
+export interface EotBookletChapter {
+  id: string;
+  bookletId: string;
+  chapterNumber: number;
+  title: string;
+  summary: string;
+  intro: string;
+  createdAt: FirestoreDate;
+  updatedAt: FirestoreDate;
+}
+
+export interface EotBookletSection {
+  id: string;
+  bookletId: string;
+  chapterId: string;
+  sectionNumber: number;
+  heading: string;
+  content: string;
+  imagePrompt: string;
+  imageUrl: string;
+  illustrationStyle: string;
+  interactiveLinksJson: string;
+  createdAt: FirestoreDate;
+  updatedAt: FirestoreDate;
+}
+
 export type LibraryBookletStatus = "draft" | "review" | "approved" | "published" | "archived";
 
 export interface LibraryBooklet {
@@ -232,6 +444,69 @@ export interface LibrarySection {
   imageUrl: string;
   interactiveLinksJson: string;
   createdAt: FirestoreDate;
+  updatedAt: FirestoreDate;
+}
+
+export interface LibraryBookletImage {
+  id: string;
+  label: string;
+  imageUrl: string;
+  altText: string;
+  title?: string;
+  caption?: string;
+  credits?: string;
+  chapterId?: string;
+  sectionId?: string;
+  prompt?: string;
+}
+
+export interface LibraryBookletQuizQuestion {
+  id: string;
+  questionType?: EotBookletQuizQuestionType;
+  question: string;
+  options: string[];
+  answer: string;
+  explanation: string;
+  points?: number;
+}
+
+export interface LibraryBookletQuiz {
+  id: string;
+  scope: "booklet" | "chapter";
+  chapterId?: string;
+  title: string;
+  passScore: number;
+  questions: LibraryBookletQuizQuestion[];
+}
+
+export interface LibraryWhatsappPrompt {
+  id: string;
+  scope: "booklet" | "chapter" | "section";
+  chapterId?: string;
+  sectionId?: string;
+  ctaType?: EotBookletEngagementType;
+  buttonLabel?: string;
+  whatsappNumber?: string;
+  prompt: string;
+  responseTemplate: string;
+}
+
+export interface LibraryReadingSettings {
+  fontScale: "standard" | "large";
+  estimatedMinutes: number;
+  allowOffline: boolean;
+  showImages: boolean;
+}
+
+export interface LibraryBookletExtras {
+  bookletId: string;
+  manuscript: string;
+  images: LibraryBookletImage[];
+  illustrations: LibraryBookletImage[];
+  quizzes: LibraryBookletQuiz[];
+  whatsappPrompts: LibraryWhatsappPrompt[];
+  readingSettings: LibraryReadingSettings;
+  metadata: Record<string, string>;
   updatedAt: FirestoreDate;
 }
 
@@ -279,6 +554,47 @@ export interface LibraryBookletPack {
     signature: string;
   };
   content: {
+    cover?: {
+      title: string;
+      subtitle: string;
+      author: string;
+      imageUrl: string;
+      description: string;
+      category: string;
+      ageRating: string;
+    };
+    chapters?: Array<{
+      id: string;
+      chapterNumber: number;
+      title: string;
+      intro: string;
+      sections: Array<{
+        id: string;
+        sectionNumber: number;
+        heading: string;
+        body: string;
+        imagePrompt: string;
+        imageUrl: string;
+        interactiveLinks: unknown[];
+      }>;
+    }>;
+    sections?: Array<{
+      id: string;
+      chapterId: string;
+      sectionNumber: number;
+      heading: string;
+      body: string;
+      imagePrompt: string;
+      imageUrl: string;
+      interactiveLinks: unknown[];
+    }>;
+    images?: LibraryBookletImage[];
+    illustrations?: LibraryBookletImage[];
+    media?: LibraryBookletImage[];
+    quizzes?: LibraryBookletQuiz[];
+    whatsappPrompts?: LibraryWhatsappPrompt[];
+    readingSettings?: LibraryReadingSettings;
+    metadata?: Record<string, string>;
     booklet: {
       id: string;
       title: string;
@@ -308,6 +624,31 @@ export interface LibraryBookletPack {
       }>;
     };
   };
+}
+
+export interface DeployableBookletPack extends LibraryBookletPack {
+  cover: NonNullable<LibraryBookletPack["content"]["cover"]>;
+  chapters: NonNullable<LibraryBookletPack["content"]["chapters"]>;
+  sections: NonNullable<LibraryBookletPack["content"]["sections"]>;
+  illustrations: NonNullable<LibraryBookletPack["content"]["illustrations"]>;
+  media: NonNullable<LibraryBookletPack["content"]["media"]>;
+  quizzes: NonNullable<LibraryBookletPack["content"]["quizzes"]>;
+  whatsappEngagement: NonNullable<LibraryBookletPack["content"]["whatsappPrompts"]>;
+}
+
+export interface EotBookletBuildHistory {
+  id: string;
+  bookletId: string;
+  packId: string;
+  version: string;
+  fileName: string;
+  checksum: string;
+  chapterCount: number;
+  sectionCount: number;
+  illustrationCount: number;
+  quizCount: number;
+  whatsappEngagementCount: number;
+  createdAt: FirestoreDate;
 }
 
 export type RelationshipType =
@@ -343,6 +684,15 @@ export interface EotCharacter {
   language?: string;
   role: string;
   occupation: string;
+  archetype?: string;
+  position?: string;
+  shortBiography?: string;
+  coreTraits?: string[];
+  signatureQuote?: string;
+  memorableQuotes?: string[];
+  isPublic?: boolean;
+  enabled?: boolean;
+  displayOrder?: number;
   status?: "active" | "inactive" | "deceased" | "retired" | "missing" | string;
   physicalDescription?: string;
   height?: string;
@@ -1089,6 +1439,138 @@ export interface EotVendorContact {
   active?: boolean;
 }
 
+export type AdvertisingStatus = "draft" | "review" | "approved" | "active" | "paused" | "rejected" | "expired";
+export type AdvertisingPackage = "starter" | "growth" | "pro" | "enterprise";
+export type AdvertisingPlacement = "daily_spotlight" | "episode_sponsor" | "chapter_spotlight" | "marketplace_home" | "vendor_listing" | "product_listing" | "category" | "search";
+
+export interface Advertiser {
+  id: string;
+  vendorId?: string;
+  businessName: string;
+  industry: string;
+  location: string;
+  shortDescription: string;
+  logoUrl: string;
+  bannerUrl: string;
+  website?: string;
+  phone?: string;
+  whatsapp?: string;
+  email?: string;
+  verified: boolean;
+  status: AdvertisingStatus;
+  createdAt: FirestoreDate;
+  updatedAt: FirestoreDate;
+  createdBy?: string;
+  audit?: Record<string, unknown>;
+}
+
+export interface AdvertisingCampaign {
+  id: string;
+  advertiserId: string;
+  vendorId?: string;
+  title: string;
+  packageType: AdvertisingPackage;
+  placementTypes: AdvertisingPlacement[];
+  startDate: string;
+  endDate: string;
+  status: AdvertisingStatus;
+  moderationStatus: "pending" | "approved" | "rejected";
+  priority: number;
+  budget: number;
+  targetRegion: string;
+  targetCategory: string;
+  bannerUrl: string;
+  logoUrl: string;
+  destinationUrl: string;
+  contactPhone: string;
+  contactWhatsapp: string;
+  summary: string;
+  rejectionReason?: string;
+  createdAt: FirestoreDate;
+  updatedAt: FirestoreDate;
+  createdBy?: string;
+  audit?: Record<string, unknown>;
+}
+
+export interface BusinessSpotlight {
+  id: string;
+  campaignId: string;
+  advertiserId: string;
+  vendorId?: string;
+  businessName: string;
+  industry: string;
+  location: string;
+  shortDescription: string;
+  bannerUrl: string;
+  logoUrl: string;
+  verified: boolean;
+  status: AdvertisingStatus;
+  priority: number;
+  startDate: string;
+  endDate: string;
+  createdAt: FirestoreDate;
+  updatedAt: FirestoreDate;
+}
+
+export interface EpisodeSponsor {
+  id: string;
+  campaignId: string;
+  advertiserId: string;
+  episodeId?: string;
+  sponsorName: string;
+  industry: string;
+  tagline: string;
+  logoUrl: string;
+  status: AdvertisingStatus;
+  priority: number;
+  startDate: string;
+  endDate: string;
+  createdAt: FirestoreDate;
+  updatedAt: FirestoreDate;
+}
+
+export interface AdvertisingImpression {
+  id: string;
+  campaignId: string;
+  advertiserId?: string;
+  readerId?: string;
+  placement: AdvertisingPlacement | string;
+  entityId?: string;
+  metadata: Record<string, unknown>;
+  createdAt: FirestoreDate;
+  syncStatus?: "pending" | "synced" | "failed" | "local-only";
+}
+
+export interface AdvertisingClick {
+  id: string;
+  campaignId: string;
+  advertiserId?: string;
+  readerId?: string;
+  placement: AdvertisingPlacement | string;
+  action: "view_business" | "contact_vendor" | "whatsapp" | "phone" | "dismiss" | "profile_visit" | "lead" | string;
+  entityId?: string;
+  metadata: Record<string, unknown>;
+  createdAt: FirestoreDate;
+  syncStatus?: "pending" | "synced" | "failed" | "local-only";
+}
+
+export interface CampaignAnalytics {
+  id: string;
+  campaignId: string;
+  advertiserId?: string;
+  impressions: number;
+  clicks: number;
+  modalViews: number;
+  modalClosures: number;
+  profileVisits: number;
+  contactClicks: number;
+  whatsappClicks: number;
+  phoneClicks: number;
+  leads: number;
+  revenue: number;
+  updatedAt: FirestoreDate;
+}
+
 export interface EotCommerceLink {
   id: string;
   linkType: "story_business_to_vendor" | "character_to_vendor" | "character_to_product" | "episode_to_vendor" | "paragraph_to_product" | "business_to_product" | string;
@@ -1111,6 +1593,30 @@ export interface EotCommerceInterestLog {
   metadata: Record<string, unknown>;
   createdAt: string;
   syncStatus: "pending" | "synced" | "failed" | "local-only";
+}
+
+export interface EotAnalyticsSnapshot {
+  id: string;
+  snapshotType: string;
+  period: string;
+  dateFrom: string;
+  dateTo: string;
+  metrics: Record<string, unknown>;
+  createdAt: FirestoreDate;
+  updatedAt: FirestoreDate;
+}
+
+export interface EotAnalyticsCacheRecord {
+  id: string;
+  cacheKey: string;
+  payload: Record<string, unknown>;
+  updatedAt: string;
+}
+
+export interface EotAnalyticsFilterRecord {
+  id: string;
+  filters: Record<string, string>;
+  updatedAt: string;
 }
 
 export interface VendorPack {
@@ -1348,9 +1854,9 @@ export type ContentPlan = "free" | "reader" | "premium" | "studio" | "enterprise
 
 export interface EotPublishedPack {
   id: string;
-  episodeId: string;
+  episodeId?: string;
   packId: string;
-  packType: "episode" | "vendor" | "asset";
+  packType: "episode" | "library_booklet" | "vendor" | "asset" | "quiz";
   version: string;
   title: string;
   synopsis?: string;
@@ -1360,9 +1866,11 @@ export interface EotPublishedPack {
   releaseTime?: string;
   timezone?: string;
   requiredLicencePlan: ContentPlan | string;
+  checksum?: string;
   downloadUrl?: string;
-  isDownloadAvailable: boolean;
+  isDownloadAvailable?: boolean;
   status: "scheduled" | "published" | "archived";
+  createdAt?: FirestoreDate;
   publishedAt?: FirestoreDate;
   updatedAt?: FirestoreDate;
 }

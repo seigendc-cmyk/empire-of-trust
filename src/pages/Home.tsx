@@ -1,226 +1,227 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-import { firebaseConfigError, isFirebaseConfigured } from "../lib/firebase";
-import { getReaderProfileSummary, listImportedPacks, readerDb } from "../lib/offlineDb";
-import { useAuth } from "../state/AuthContext";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { listPublicCharacters } from "../lib/characterRepository";
+import type { EotCharacter } from "../types";
 
-interface DashboardState {
-  online: boolean;
-  serviceWorker: "ready" | "registering" | "unsupported";
-  packs: number;
-  progress: number;
-  pendingSync: number;
-  points: number;
-  badges: number;
-  level: string;
-  lastActivity: string;
-}
+const WELCOME_STORAGE_KEY = "welcomeSeen";
+const SOUND_STORAGE_KEY = "eotWelcomeSoundEnabled";
+const POSTER_SRC = "/images/eot-welcome.jpg";
 
-const initialState: DashboardState = {
-  online: typeof navigator === "undefined" ? true : navigator.onLine,
-  serviceWorker: typeof navigator !== "undefined" && "serviceWorker" in navigator ? "registering" : "unsupported",
-  packs: 0,
-  progress: 0,
-  pendingSync: 0,
-  points: 0,
-  badges: 0,
-  level: "Reader",
-  lastActivity: "No local activity yet",
+type AmbientSound = {
+  context: AudioContext;
+  oscillators: OscillatorNode[];
+  masterGain: GainNode;
+  pulseTimer: number;
 };
 
-const quickActions = [
-  { to: "/reader", label: "Open Reader", detail: "Continue local packs" },
-  { to: "/reader/import", label: "Import Pack", detail: "Load episode JSON" },
-  { to: "/studio", label: "Studio", detail: "Production workspace" },
-  { to: "/mall", label: "Mall", detail: "Browse vendors" },
-  { to: "/licence", label: "Licence", detail: "Plan and activation" },
-  { to: "/settings", label: "Settings", detail: "Reader controls" },
+const characterZones = [
+  { id: "marjo-ncube", label: "Marjo Ncube", className: "welcome-character-zone-marjo" },
+  { id: "selion-ncube", label: "Selion Ncube", className: "welcome-character-zone-selion" },
+  { id: "trust-ncube", label: "Trust Ncube", className: "welcome-character-zone-trust" },
+  { id: "tandi-ncube", label: "Tandi Ncube", className: "welcome-character-zone-tandi" },
+  { id: "gerald-ncube", label: "Gerald Ncube", className: "welcome-character-zone-gerald" },
+  { id: "mamada", label: "Mamada", className: "welcome-character-zone-mamada" },
 ];
 
-const studioActions = [
-  { to: "/studio/story-engine/episode-planner", label: "Plan Episode" },
-  { to: "/studio/production", label: "Production" },
-  { to: "/studio/release-command", label: "Release Command" },
-  { to: "/packs", label: "Packs" },
-];
+function readSoundPreference() {
+  if (typeof localStorage === "undefined") return false;
+  return localStorage.getItem(SOUND_STORAGE_KEY) === "true";
+}
+
+function getAudioContextClass() {
+  return window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+}
+
+function playSoftTap() {
+  if (!readSoundPreference()) return;
+
+  try {
+    const AudioContextClass = getAudioContextClass();
+    if (!AudioContextClass) return;
+
+    const context = new AudioContextClass();
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    const now = context.currentTime;
+
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(520, now);
+    oscillator.frequency.exponentialRampToValueAtTime(320, now + 0.09);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.045, now + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
+
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start(now);
+    oscillator.stop(now + 0.16);
+    window.setTimeout(() => context.close().catch(() => undefined), 260);
+  } catch {
+    // Audio should never block entering the app.
+  }
+}
 
 export default function Home() {
-  const { loading, user, isAdmin } = useAuth();
-  const [state, setState] = useState<DashboardState>(initialState);
+  const navigate = useNavigate();
+  const [leaving, setLeaving] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(readSoundPreference);
+  const [characters, setCharacters] = useState<EotCharacter[]>([]);
+  const [selectedCharacter, setSelectedCharacter] = useState<EotCharacter | null>(null);
+  const ambientRef = useRef<AmbientSound | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
+  const stopAmbientSound = useCallback(() => {
+    const ambient = ambientRef.current;
+    if (!ambient) return;
 
-    const updateOnline = () => setState((current) => ({ ...current, online: navigator.onLine }));
-    window.addEventListener("online", updateOnline);
-    window.addEventListener("offline", updateOnline);
-
-    async function loadDashboard() {
-      const [packs, progress, pendingSync, profile, recentActivity] = await Promise.all([
-        listImportedPacks(),
-        readerDb.readingProgress.count(),
-        readerDb.syncQueue.where("syncStatus").equals("pending").count(),
-        getReaderProfileSummary(),
-        readerDb.readerActivityLog.orderBy("createdAt").last(),
-      ]);
-
-      if (cancelled) return;
-      setState((current) => ({
-        ...current,
-        packs: packs.length,
-        progress,
-        pendingSync,
-        points: profile.totalPoints,
-        badges: profile.badges.length,
-        level: profile.level,
-        lastActivity: recentActivity ? new Date(recentActivity.createdAt).toLocaleString() : "No local activity yet",
-      }));
-    }
-
-    loadDashboard().catch(() => undefined);
-
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.ready
-        .then(() => {
-          if (!cancelled) setState((current) => ({ ...current, serviceWorker: "ready" }));
-        })
-        .catch(() => undefined);
-    }
-
-    return () => {
-      cancelled = true;
-      window.removeEventListener("online", updateOnline);
-      window.removeEventListener("offline", updateOnline);
-    };
+    window.clearInterval(ambient.pulseTimer);
+    ambient.masterGain.gain.setTargetAtTime(0.0001, ambient.context.currentTime, 0.08);
+    window.setTimeout(() => {
+      ambient.oscillators.forEach((oscillator) => {
+        try {
+          oscillator.stop();
+        } catch {
+          // The oscillator may already be stopped during route changes.
+        }
+      });
+      ambient.context.close().catch(() => undefined);
+    }, 180);
+    ambientRef.current = null;
   }, []);
 
-  const deploymentItems = useMemo(
-    () => [
-      { label: "Firebase", value: isFirebaseConfigured ? "Configured" : "Local mode", good: isFirebaseConfigured },
-      { label: "Network", value: state.online ? "Online" : "Offline", good: state.online },
-      { label: "Service worker", value: state.serviceWorker === "ready" ? "Ready" : state.serviceWorker === "unsupported" ? "Unsupported" : "Registering", good: state.serviceWorker === "ready" },
-      { label: "Admin", value: loading ? "Checking" : isAdmin ? "Signed in" : user ? "Not admin" : "Signed out", good: isAdmin },
-    ],
-    [isAdmin, loading, state.online, state.serviceWorker, user],
-  );
+  const startAmbientSound = useCallback(() => {
+    if (ambientRef.current) return;
+
+    try {
+      const AudioContextClass = getAudioContextClass();
+      if (!AudioContextClass) return;
+
+      const context = new AudioContextClass();
+      const masterGain = context.createGain();
+      const filter = context.createBiquadFilter();
+      const oscillators = [110, 165, 220].map((frequency, index) => {
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+        oscillator.type = index === 0 ? "sine" : "triangle";
+        oscillator.frequency.setValueAtTime(frequency, context.currentTime);
+        gain.gain.setValueAtTime(index === 0 ? 0.18 : 0.07, context.currentTime);
+        oscillator.connect(gain);
+        gain.connect(filter);
+        oscillator.start();
+        return oscillator;
+      });
+
+      filter.type = "lowpass";
+      filter.frequency.setValueAtTime(520, context.currentTime);
+      masterGain.gain.setValueAtTime(0.0001, context.currentTime);
+      masterGain.gain.linearRampToValueAtTime(0.025, context.currentTime + 1.2);
+      filter.connect(masterGain);
+      masterGain.connect(context.destination);
+
+      const pulseTimer = window.setInterval(() => {
+        const now = context.currentTime;
+        masterGain.gain.cancelScheduledValues(now);
+        masterGain.gain.setValueAtTime(0.018, now);
+        masterGain.gain.linearRampToValueAtTime(0.028, now + 0.25);
+        masterGain.gain.linearRampToValueAtTime(0.018, now + 1.6);
+      }, 5200);
+
+      ambientRef.current = { context, oscillators, masterGain, pulseTimer };
+      context.resume().catch(() => undefined);
+    } catch {
+      ambientRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(SOUND_STORAGE_KEY, String(soundEnabled));
+    if (soundEnabled) startAmbientSound();
+    if (!soundEnabled) stopAmbientSound();
+    return undefined;
+  }, [soundEnabled, startAmbientSound, stopAmbientSound]);
+
+  useEffect(() => stopAmbientSound, [stopAmbientSound]);
+
+  useEffect(() => {
+    listPublicCharacters().then(setCharacters).catch(() => setCharacters([]));
+  }, []);
+
+  const enterEmpire = useCallback(() => {
+    if (leaving) return;
+    playSoftTap();
+    localStorage.setItem(WELCOME_STORAGE_KEY, "true");
+    setLeaving(true);
+    window.setTimeout(() => navigate("/home"), 800);
+  }, [leaving, navigate]);
+
+  const toggleSound = useCallback(() => {
+    setSoundEnabled((current) => !current);
+  }, []);
+
+  const openCharacter = useCallback((characterId: string) => {
+    const character = characters.find((item) => item.id === characterId);
+    if (character) setSelectedCharacter(character);
+  }, [characters]);
 
   return (
-    <section className="page grid gap-4">
-      <header className="grid gap-3 border-b border-white/10 pb-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <StatusPill tone={state.online ? "good" : "warn"} label={state.online ? "Online" : "Offline"} />
-          <StatusPill tone={isFirebaseConfigured ? "good" : "warn"} label={isFirebaseConfigured ? "Firebase ready" : "Local draft mode"} />
-          <StatusPill tone={state.serviceWorker === "ready" ? "good" : "muted"} label={state.serviceWorker === "ready" ? "PWA ready" : "PWA pending"} />
-        </div>
-        <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
-          <div className="min-w-0">
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-signal">Empire of Trust command center</p>
-            <h1 className="mt-2 text-2xl font-black leading-tight text-paper sm:text-4xl">App Shell Dashboard</h1>
-          </div>
-          <Link className="btn btn-primary w-full sm:w-auto" to={isAdmin ? "/studio" : "/studio/login"}>
-            {isAdmin ? "Open Studio" : "Studio Login"}
-          </Link>
-        </div>
-      </header>
-
-      {!isFirebaseConfigured && (
-        <section className="border border-signal/50 bg-signal/10 p-4 text-sm leading-6 text-paper/75">
-          <p className="font-bold text-signal">Deployment needs Firebase environment values.</p>
-          <p className="mt-1">{firebaseConfigError || "Firebase is not configured for this build."}</p>
-        </section>
-      )}
-
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard label="Imported packs" value={state.packs} detail="Offline reader inventory" />
-        <MetricCard label="Reading progress" value={state.progress} detail="Saved local positions" />
-        <MetricCard label="Pending sync" value={state.pendingSync} detail="Queued local events" tone={state.pendingSync > 0 ? "warn" : "good"} />
-        <MetricCard label="Reader level" value={state.level} detail={`${state.points} points / ${state.badges} badges`} />
-      </section>
-
-      <section className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-        <div className="grid gap-4">
-          <section className="panel p-4">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <h2 className="text-base font-black">Quick Actions</h2>
-              <span className="text-xs font-bold uppercase tracking-[0.14em] text-paper/45">Mobile ready</span>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {quickActions.map((action) => (
-                <Link key={action.to} to={action.to} className="grid min-h-20 gap-1 border border-white/10 bg-black/20 p-3 hover:border-signal hover:bg-signal hover:text-ink">
-                  <span className="text-sm font-black">{action.label}</span>
-                  <span className="text-xs font-semibold opacity-70">{action.detail}</span>
-                </Link>
-              ))}
-            </div>
-          </section>
-
-          <section className="panel p-4">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <h2 className="text-base font-black">Studio Workbench</h2>
-              <span className="text-xs font-bold uppercase tracking-[0.14em] text-paper/45">{isAdmin ? "Unlocked" : "Login required"}</span>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-4">
-              {studioActions.map((action) => (
-                <Link key={action.to} to={action.to} className="btn min-h-14 px-3 py-2 text-center text-xs">
-                  {action.label}
-                </Link>
-              ))}
-            </div>
-          </section>
-        </div>
-
-        <aside className="grid gap-4">
-          <section className="panel p-4">
-            <h2 className="text-base font-black">Deployment Health</h2>
-            <div className="mt-3 grid gap-2">
-              {deploymentItems.map((item) => (
-                <div key={item.label} className="flex items-center justify-between gap-3 border border-white/10 bg-black/20 p-3 text-sm">
-                  <span className="font-semibold text-paper/65">{item.label}</span>
-                  <span className={item.good ? "font-black text-ledger" : "font-black text-signal"}>{item.value}</span>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="panel p-4">
-            <h2 className="text-base font-black">Local Reader</h2>
-            <dl className="mt-3 grid gap-2 text-sm">
-              <InfoRow label="Last activity" value={state.lastActivity} />
-              <InfoRow label="Auth state" value={user?.email ?? "Reader mode"} />
-              <InfoRow label="Storage" value="IndexedDB active" />
-            </dl>
-          </section>
-        </aside>
-      </section>
+    <section className={`welcome-screen ${leaving ? "welcome-screen-leaving" : ""}`} aria-label="Empire of Trust welcome">
+      <div className="welcome-poster-frame">
+        <img className="welcome-poster-image" src={POSTER_SRC} alt="" />
+        {characterZones.map((zone) => (
+          <button
+            key={zone.id}
+            className={`welcome-character-zone ${zone.className}`}
+            type="button"
+            aria-label={`Open ${zone.label} details`}
+            onClick={() => openCharacter(zone.id)}
+            onTouchEnd={(event) => event.currentTarget.blur()}
+          />
+        ))}
+        <button className="welcome-enter-hitbox" type="button" aria-label="Enter the Empire" onClick={enterEmpire} onTouchEnd={(event) => event.currentTarget.blur()} />
+      </div>
+      <button className="welcome-sound-toggle" type="button" aria-label={soundEnabled ? "Mute welcome sound" : "Enable welcome sound"} aria-pressed={soundEnabled} onClick={toggleSound}>
+        <span className="welcome-speaker-icon" aria-hidden="true">{soundEnabled ? "ON" : "OFF"}</span>
+      </button>
+      {selectedCharacter && <CharacterPanel character={selectedCharacter} onClose={() => setSelectedCharacter(null)} />}
     </section>
   );
 }
 
-function StatusPill({ label, tone }: { label: string; tone: "good" | "warn" | "muted" }) {
-  const classes = {
-    good: "border-ledger text-ledger",
-    warn: "border-signal text-signal",
-    muted: "border-white/15 text-paper/55",
-  };
-  return <span className={`status-badge ${classes[tone]}`}>{label}</span>;
-}
+function CharacterPanel({ character, onClose }: { character: EotCharacter; onClose: () => void }) {
+  const traits = character.coreTraits?.length ? character.coreTraits : character.strengths?.split(/[\n,;]+/).map((item) => item.trim()).filter(Boolean) ?? [];
 
-function MetricCard({ label, value, detail, tone = "neutral" }: { label: string; value: string | number; detail: string; tone?: "neutral" | "good" | "warn" }) {
-  const valueClass = tone === "good" ? "text-ledger" : tone === "warn" ? "text-signal" : "text-paper";
   return (
-    <article className="panel p-4">
-      <p className="text-xs font-bold uppercase tracking-[0.14em] text-paper/45">{label}</p>
-      <p className={`mt-3 break-words text-3xl font-black leading-none ${valueClass}`}>{value}</p>
-      <p className="mt-3 text-sm font-semibold text-paper/60">{detail}</p>
-    </article>
-  );
-}
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="grid gap-1 border-b border-white/10 pb-2 last:border-0 last:pb-0">
-      <dt className="text-xs font-bold uppercase tracking-[0.14em] text-paper/40">{label}</dt>
-      <dd className="break-words font-semibold text-paper/75">{value}</dd>
+    <div className="welcome-character-panel-wrap" role="presentation" onClick={onClose}>
+      <article className="welcome-character-panel" role="dialog" aria-modal="true" aria-labelledby="welcome-character-name" onClick={(event) => event.stopPropagation()}>
+        <button className="welcome-character-close" type="button" aria-label="Close character details" onClick={onClose}>x</button>
+        <p className="welcome-character-eyebrow">{character.archetype || "Empire Player"}</p>
+        <h2 id="welcome-character-name">{character.displayName || character.name}</h2>
+        <dl className="welcome-character-facts">
+          <div>
+            <dt>Age</dt>
+            <dd>{character.age || "-"}</dd>
+          </div>
+          <div>
+            <dt>Archetype</dt>
+            <dd>{character.archetype || "Key Player"}</dd>
+          </div>
+          <div>
+            <dt>Role</dt>
+            <dd>{character.position || character.role || character.occupation || "John Ekeniah Empire"}</dd>
+          </div>
+        </dl>
+        <p className="welcome-character-bio">{character.shortBiography || character.biography || character.backstory}</p>
+        {traits.length > 0 && (
+          <div className="welcome-character-traits">
+            {traits.slice(0, 4).map((trait) => <span key={trait}>{trait}</span>)}
+          </div>
+        )}
+        {(character.signatureQuote || character.memorableQuotes?.[0]) && (
+          <blockquote>{character.signatureQuote || character.memorableQuotes?.[0]}</blockquote>
+        )}
+        <Link className="welcome-character-link" to={`/characters/${character.id}`}>
+          View Full Character
+        </Link>
+      </article>
     </div>
   );
 }

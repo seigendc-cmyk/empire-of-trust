@@ -1,0 +1,186 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color: #f5f2ea;
+  background: #111111;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  overscroll-behavior-y: none;
+  background:
+    linear-gradient(120deg, rgba(184, 146, 75, 0.12), transparent 34%),
+    linear-gradient(180deg, #111111 0%, #202124 100%);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
+}
+
+@layer components {
+  .shell {
+    @apply min-h-screen bg-ink text-paper;
+  }
+
+  .app-frame {
+    @apply grid min-h-dvh overflow-x-hidden lg:grid-cols-[260px_1fr];
+  }
+
+  .app-main {
+    @apply flex min-h-dvh min-w-0 flex-col;
+  }
+
+  .app-header {
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+    @apply sticky top-0 z-20 flex min-h-16 items-center justify-between gap-3 border-b border-white/10 bg-ink/95 pb-3 backdrop-blur lg:hidden;
+  }
+
+  .app-content {
+    padding-bottom: calc(5.75rem + env(safe-area-inset-bottom));
+    @apply min-w-0 flex-1 overflow-x-hidden lg:pb-0;
+  }
+
+  .topbar {
+    @apply sticky top-0 z-20 border-b border-white/10 bg-ink/95 backdrop-blur;
+  }
+
+  .page {
+    @apply mx-auto w-full max-w-6xl min-w-0 px-4 py-4 sm:px-6 lg:px-8 lg:py-8;
+  }
+
+  .panel {
+    @apply border border-white/10 bg-white/[0.045] shadow-2xl shadow-black/20;
+  }
+
+  .field {
+    @apply min-h-12 w-full border border-white/15 bg-black/25 px-3 py-3 text-base text-paper outline-none transition placeholder:text-paper/35 focus:border-signal sm:text-sm;
+  }
+
+  .label {
+    @apply mb-1 block text-xs font-semibold uppercase tracking-[0.16em] text-paper/60;
+  }
+
+  .btn {
+    @apply inline-flex min-h-12 items-center justify-center gap-2 border border-white/15 bg-white/10 px-4 py-3 text-sm font-semibold text-paper transition hover:border-signal hover:bg-signal hover:text-ink disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-primary {
+    @apply border-signal bg-signal text-ink hover:bg-paper;
+  }
+
+  .nav-link {
+    @apply border-b-2 border-transparent px-2 py-4 text-sm font-semibold text-paper/70 hover:text-paper;
+  }
+
+  .nav-link-active {
+    @apply border-signal text-paper;
+  }
+
+  .mobile-bottom-nav {
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+    padding-left: max(0.5rem, env(safe-area-inset-left));
+    padding-right: max(0.5rem, env(safe-area-inset-right));
+    @apply fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-white/10 bg-ink/95 pt-2 backdrop-blur lg:hidden;
+  }
+
+  .mobile-tab {
+    @apply flex min-h-16 min-w-0 flex-col items-center justify-center gap-1 border border-transparent px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-paper/55;
+  }
+
+  .mobile-tab-active {
+    @apply border-white/10 bg-white/10 text-signal;
+  }
+
+  .mobile-tab-glyph {
+    @apply grid h-6 w-6 place-items-center border border-current text-xs font-black;
+  }
+
+  .desktop-sidebar {
+    @apply sticky top-0 hidden h-dvh min-h-dvh flex-col border-r border-white/10 bg-black/20 lg:flex;
+  }
+
+  .side-link {
+    @apply border border-transparent px-3 py-3 text-sm font-bold text-paper/60 hover:border-white/10 hover:bg-white/5 hover:text-paper;
+  }
+
+  .side-link-active {
+    @apply border-signal bg-signal text-ink hover:bg-signal hover:text-ink;
+  }
+
+  .status-badge {
+    @apply inline-flex min-h-8 items-center gap-2 border bg-black/20 px-2 text-xs font-bold uppercase tracking-[0.12em];
+  }
+
+  .icon-button {
+    @apply grid h-11 w-11 place-items-center border border-white/15 bg-white/10 text-2xl font-black leading-none text-paper hover:border-signal hover:bg-signal hover:text-ink;
+  }
+
+  .menu-item {
+    @apply block min-h-12 border-b border-white/10 px-3 py-3 text-sm font-semibold text-paper/80 hover:bg-signal hover:text-ink;
+  }
+
+  .page-header {
+    @apply mb-4 grid min-w-0 gap-3 border-b border-white/10 pb-4 sm:flex sm:items-start sm:justify-between;
+  }
+
+  .state-panel {
+    @apply border border-white/10 bg-white/[0.045] p-5 text-paper/75;
+  }
+
+  .phone-grid {
+    @apply grid gap-4;
+  }
+
+  .touch-row {
+    @apply grid gap-2 sm:flex sm:flex-wrap;
+  }
+
+  .sticky-actions {
+    bottom: calc(4.75rem + env(safe-area-inset-bottom));
+    @apply sticky z-10 -mx-3 border-t border-white/10 bg-graphite/95 p-3 backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0;
+  }
+
+  .reader-screen {
+    @apply min-h-dvh bg-ink text-paper;
+  }
+
+  .reader-toolbar {
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+    @apply sticky top-0 z-20 flex min-h-16 items-center gap-3 border-b border-white/10 bg-ink/95 px-4 pb-3 backdrop-blur lg:top-0;
+  }
+
+  .reader-paragraph {
+    @apply border-l-2 bg-white/[0.025] py-4 pl-4 pr-2;
+  }
+}

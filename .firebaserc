@@ -1,0 +1,16 @@
+{
+  "projects": {
+    "default": "gen-lang-client-0459000055",
+    "empireot": "gen-lang-client-0459000055"
+  },
+  "targets": {
+    "gen-lang-client-0459000055": {
+      "hosting": {
+        "empireot": [
+          "empireot"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

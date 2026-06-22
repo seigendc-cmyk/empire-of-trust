@@ -1,0 +1,111 @@
+[debug] [2026-06-21T21:01:46.952Z] ----------------------------------------------------------------------
+[debug] [2026-06-21T21:01:46.960Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\Digital Commerce\AppData\Roaming\npm\node_modules\firebase-tools\lib\bin\firebase.js deploy --only hosting
+[debug] [2026-06-21T21:01:46.961Z] CLI Version:   15.20.0
+[debug] [2026-06-21T21:01:46.961Z] Platform:      win32
+[debug] [2026-06-21T21:01:46.962Z] Node Version:  v24.14.0
+[debug] [2026-06-21T21:01:46.962Z] Time:          Sun Jun 21 2026 23:01:46 GMT+0200 (South Africa Standard Time)
+[debug] [2026-06-21T21:01:46.962Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-06-21T21:01:51.395Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-06-21T21:01:51.396Z] > authorizing via signed-in user (seigendc@gmail.com)
+[debug] [2026-06-21T21:01:51.396Z] [iam] checking project gen-lang-client-0459000055 for permissions ["firebase.projects.get","firebasehosting.sites.update"]
+[debug] [2026-06-21T21:01:51.400Z] Checked if tokens are valid: false, expires at: 1782076588504
+[debug] [2026-06-21T21:01:51.401Z] Checked if tokens are valid: false, expires at: 1782076588504
+[debug] [2026-06-21T21:01:51.402Z] > refreshing access token with scopes: []
+[debug] [2026-06-21T21:01:51.408Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-06-21T21:01:51.409Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-06-21T21:01:53.613Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-06-21T21:01:53.613Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-06-21T21:01:53.651Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/gen-lang-client-0459000055:testIamPermissions [none]
+[debug] [2026-06-21T21:01:53.651Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/gen-lang-client-0459000055:testIamPermissions  x-goog-user-project=gen-lang-client-0459000055
+[debug] [2026-06-21T21:01:53.651Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/gen-lang-client-0459000055:testIamPermissions {"permissions":["firebase.projects.get","firebasehosting.sites.update"]}
+[debug] [2026-06-21T21:01:59.508Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/gen-lang-client-0459000055:testIamPermissions 200
+[debug] [2026-06-21T21:01:59.509Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/gen-lang-client-0459000055:testIamPermissions {"permissions":["firebase.projects.get","firebasehosting.sites.update"]}
+[debug] [2026-06-21T21:01:59.511Z] Checked if tokens are valid: true, expires at: 1782079312614
+[debug] [2026-06-21T21:01:59.511Z] Checked if tokens are valid: true, expires at: 1782079312614
+[debug] [2026-06-21T21:01:59.512Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/gen-lang-client-0459000055 [none]
+[debug] [2026-06-21T21:02:20.118Z] *** [apiv2] error from fetch(https://firebase.googleapis.com/v1beta1/projects/gen-lang-client-0459000055, {"headers":{},"method":"GET","signal":{"reason":""}}): FetchError: request to https://firebase.googleapis.com/v1beta1/projects/gen-lang-client-0459000055 failed, reason: socket hang up
+[debug] [2026-06-21T21:02:20.118Z] Failed to make request to https://firebase.googleapis.com/v1beta1/projects/gen-lang-client-0459000055 (original: request to https://firebase.googleapis.com/v1beta1/projects/gen-lang-client-0459000055 failed, reason: socket hang up)
+[info] 
+[info] === Deploying to 'gen-lang-client-0459000055'...
+[info] 
+[info] i  deploying hosting 
+[debug] [2026-06-21T21:02:20.129Z] Checked if tokens are valid: true, expires at: 1782079312614
+[debug] [2026-06-21T21:02:20.129Z] Checked if tokens are valid: true, expires at: 1782079312614
+[debug] [2026-06-21T21:02:20.129Z] >>> [apiv2][query] GET https://firebasehosting.googleapis.com/v1beta1/projects/gen-lang-client-0459000055/sites/empireot [none]
+[debug] [2026-06-21T21:02:57.561Z] *** [apiv2] error from fetch(https://firebasehosting.googleapis.com/v1beta1/projects/gen-lang-client-0459000055/sites/empireot, {"headers":{},"method":"GET"}): FetchError: request to https://firebasehosting.googleapis.com/v1beta1/projects/gen-lang-client-0459000055/sites/empireot failed, reason: socket hang up
+[debug] [2026-06-21T21:03:02.598Z] Error: Timed out.
+    at Timeout._onTimeout (C:\Users\Digital Commerce\AppData\Roaming\npm\node_modules\firebase-tools\lib\utils.js:310:49)
+    at listOnTimeout (node:internal/timers:605:17)
+    at process.processTimers (node:internal/timers:541:7)
+[error] 
+[error] Error: An unexpected error has occurred.
+[debug] [2026-06-21T21:06:05.115Z] ----------------------------------------------------------------------
+[debug] [2026-06-21T21:06:05.120Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\Digital Commerce\AppData\Roaming\npm\node_modules\firebase-tools\lib\bin\firebase.js deploy --only hosting:empireot
+[debug] [2026-06-21T21:06:05.121Z] CLI Version:   15.20.0
+[debug] [2026-06-21T21:06:05.121Z] Platform:      win32
+[debug] [2026-06-21T21:06:05.121Z] Node Version:  v24.14.0
+[debug] [2026-06-21T21:06:05.122Z] Time:          Sun Jun 21 2026 23:06:05 GMT+0200 (South Africa Standard Time)
+[debug] [2026-06-21T21:06:05.122Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-06-21T21:06:10.073Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-06-21T21:06:10.075Z] > authorizing via signed-in user (seigendc@gmail.com)
+[debug] [2026-06-21T21:06:10.075Z] [iam] checking project gen-lang-client-0459000055 for permissions ["firebase.projects.get","firebasehosting.sites.update"]
+[debug] [2026-06-21T21:06:10.077Z] Checked if tokens are valid: true, expires at: 1782079312614
+[debug] [2026-06-21T21:06:10.077Z] Checked if tokens are valid: true, expires at: 1782079312614
+[debug] [2026-06-21T21:06:10.080Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/gen-lang-client-0459000055:testIamPermissions [none]
+[debug] [2026-06-21T21:06:10.080Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/gen-lang-client-0459000055:testIamPermissions  x-goog-user-project=gen-lang-client-0459000055
+[debug] [2026-06-21T21:06:10.081Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/gen-lang-client-0459000055:testIamPermissions {"permissions":["firebase.projects.get","firebasehosting.sites.update"]}
+[debug] [2026-06-21T21:06:10.162Z] *** [apiv2] error from fetch(https://cloudresourcemanager.googleapis.com/v1/projects/gen-lang-client-0459000055:testIamPermissions, {"headers":{},"method":"POST","agent":{"_events":{},"_eventsCount":2,"options":{"noDelay":true,"path":null},"requests":{},"sockets":{"cloudresourcemanager.googleapis.com:443:::::::::::::::::::::":[]},"freeSockets":{},"keepAliveMsecs":1000,"keepAlive":false,"maxSockets":null,"maxFreeSockets":256,"scheduling":"lifo","maxTotalSockets":null,"totalSocketCount":0,"agentKeepAliveTimeoutBuffer":1000,"cache":{"max":20,"maxSize":0,"maxEntrySize":0,"fetchMethod":null,"keyMap":{},"keyList":["https:+http://127.0.0.1:9",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"valList":[{"_events":{},"_eventsCount":2,"options":{},"requests":{},"sockets":{"cloudresourcemanager.googleapis.com:443:::::::::::::::::::::":[]},"freeSockets":{},"keepAliveMsecs":1000,"keepAlive":false,"maxSockets":null,"maxFreeSockets":256,"scheduling":"lifo","maxTotalSockets":null,"totalSocketCount":0,"agentKeepAliveTimeoutBuffer":1000,"proxy":"http://127.0.0.1:9/","proxyHeaders":{},"connectOpts":{"ALPNProtocols":["http/1.1"],"host":"127.0.0.1","port":9}},null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"next":{"0":0,"1":0,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0,"10":0,"11":0,"12":0,"13":0,"14":0,"15":0,"16":0,"17":0,"18":0,"19":0},"prev":{"0":0,"1":0,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0,"10":0,"11":0,"12":0,"13":0,"14":0,"15":0,"16":0,"17":0,"18":0,"19":0},"head":0,"tail":0,"free":{"heap":{"0":0,"1":0,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0,"10":0,"11":0,"12":0,"13":0,"14":0,"15":0,"16":0,"17":0,"18":0,"19":0},"length":0},"initialFill":1,"size":1,"disposeAfter":null,"disposed":null,"noDisposeOnSet":false,"noUpdateTTL":false,"noDeleteOnFetchRejection":false,"allowStaleOnFetchRejection":false,"allowStaleOnFetchAbort":false,"ignoreFetchAbort":false,"allowStale":false,"noDeleteOnStaleGet":false,"updateAgeOnGet":false,"updateAgeOnHas":false,"ttlResolution":1,"ttlAutopurge":false,"ttl":0},"httpAgent":{"_events":{},"_eventsCount":2,"options":{"noDelay":true,"path":null},"defaultPort":80,"protocol":"http:","requests":{},"sockets":{},"freeSockets":{},"keepAliveMsecs":1000,"keepAlive":false,"maxSockets":null,"maxFreeSockets":256,"scheduling":"lifo","maxTotalSockets":null,"totalSocketCount":0,"agentKeepAliveTimeoutBuffer":1000},"httpsAgent":{"_events":{},"_eventsCount":2,"options":{"defaultPort":443,"protocol":"https:","noDelay":true,"path":null},"defaultPort":443,"protocol":"https:","requests":{},"sockets":{},"freeSockets":{},"keepAliveMsecs":1000,"keepAlive":false,"maxSockets":null,"maxFreeSockets":256,"scheduling":"lifo","maxTotalSockets":null,"totalSocketCount":0,"agentKeepAliveTimeoutBuffer":1000,"maxCachedSessions":100,"_sessionCache":{"map":{},"list":[]}}},"body":"{\"permissions\":[\"firebase.projects.get\",\"firebasehosting.sites.update\"]}"}): FetchError: request to https://cloudresourcemanager.googleapis.com/v1/projects/gen-lang-client-0459000055:testIamPermissions failed, reason: connect ECONNREFUSED 127.0.0.1:9
+[debug] [2026-06-21T21:06:10.163Z] [iam] error while checking permissions, command may fail: Failed to make request to https://cloudresourcemanager.googleapis.com/v1/projects/gen-lang-client-0459000055:testIamPermissions
+[debug] [2026-06-21T21:06:10.164Z] Checked if tokens are valid: true, expires at: 1782079312614
+[debug] [2026-06-21T21:06:10.165Z] Checked if tokens are valid: true, expires at: 1782079312614
+[debug] [2026-06-21T21:06:10.166Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/gen-lang-client-0459000055 [none]
+[debug] [2026-06-21T21:06:10.174Z] *** [apiv2] error from fetch(https://firebase.googleapis.com/v1beta1/projects/gen-lang-client-0459000055, {"headers":{},"method":"GET","agent":{"_events":{},"_eventsCount":2,"options":{"noDelay":true,"path":null},"requests":{},"sockets":{"firebase.googleapis.com:443:::::::::::::::::::::":[]},"freeSockets":{},"keepAliveMsecs":1000,"keepAlive":false,"maxSockets":null,"maxFreeSockets":256,"scheduling":"lifo","maxTotalSockets":null,"totalSocketCount":0,"agentKeepAliveTimeoutBuffer":1000,"cache":{"max":20,"maxSize":0,"maxEntrySize":0,"fetchMethod":null,"keyMap":{},"keyList":["https:+http://127.0.0.1:9",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"valList":[{"_events":{},"_eventsCount":2,"options":{},"requests":{},"sockets":{"firebase.googleapis.com:443:::::::::::::::::::::":[]},"freeSockets":{},"keepAliveMsecs":1000,"keepAlive":false,"maxSockets":null,"maxFreeSockets":256,"scheduling":"lifo","maxTotalSockets":null,"totalSocketCount":0,"agentKeepAliveTimeoutBuffer":1000,"proxy":"http://127.0.0.1:9/","proxyHeaders":{},"connectOpts":{"ALPNProtocols":["http/1.1"],"host":"127.0.0.1","port":9}},null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"next":{"0":0,"1":0,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0,"10":0,"11":0,"12":0,"13":0,"14":0,"15":0,"16":0,"17":0,"18":0,"19":0},"prev":{"0":0,"1":0,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0,"10":0,"11":0,"12":0,"13":0,"14":0,"15":0,"16":0,"17":0,"18":0,"19":0},"head":0,"tail":0,"free":{"heap":{"0":0,"1":0,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0,"10":0,"11":0,"12":0,"13":0,"14":0,"15":0,"16":0,"17":0,"18":0,"19":0},"length":0},"initialFill":1,"size":1,"disposeAfter":null,"disposed":null,"noDisposeOnSet":false,"noUpdateTTL":false,"noDeleteOnFetchRejection":false,"allowStaleOnFetchRejection":false,"allowStaleOnFetchAbort":false,"ignoreFetchAbort":false,"allowStale":false,"noDeleteOnStaleGet":false,"updateAgeOnGet":false,"updateAgeOnHas":false,"ttlResolution":1,"ttlAutopurge":false,"ttl":0},"httpAgent":{"_events":{},"_eventsCount":2,"options":{"noDelay":true,"path":null},"defaultPort":80,"protocol":"http:","requests":{},"sockets":{},"freeSockets":{},"keepAliveMsecs":1000,"keepAlive":false,"maxSockets":null,"maxFreeSockets":256,"scheduling":"lifo","maxTotalSockets":null,"totalSocketCount":0,"agentKeepAliveTimeoutBuffer":1000},"httpsAgent":{"_events":{},"_eventsCount":2,"options":{"defaultPort":443,"protocol":"https:","noDelay":true,"path":null},"defaultPort":443,"protocol":"https:","requests":{},"sockets":{},"freeSockets":{},"keepAliveMsecs":1000,"keepAlive":false,"maxSockets":null,"maxFreeSockets":256,"scheduling":"lifo","maxTotalSockets":null,"totalSocketCount":0,"agentKeepAliveTimeoutBuffer":1000,"maxCachedSessions":100,"_sessionCache":{"map":{},"list":[]}}},"signal":{"reason":""}}): FetchError: request to https://firebase.googleapis.com/v1beta1/projects/gen-lang-client-0459000055 failed, reason: connect ECONNREFUSED 127.0.0.1:9
+[debug] [2026-06-21T21:06:10.175Z] Failed to make request to https://firebase.googleapis.com/v1beta1/projects/gen-lang-client-0459000055 (original: request to https://firebase.googleapis.com/v1beta1/projects/gen-lang-client-0459000055 failed, reason: connect ECONNREFUSED 127.0.0.1:9)
+[info] 
+[info] === Deploying to 'gen-lang-client-0459000055'...
+[info] 
+[info] i  deploying hosting 
+[debug] [2026-06-21T21:06:10.179Z] Checked if tokens are valid: true, expires at: 1782079312614
+[debug] [2026-06-21T21:06:10.180Z] Checked if tokens are valid: true, expires at: 1782079312614
+[debug] [2026-06-21T21:06:10.180Z] >>> [apiv2][query] GET https://firebasehosting.googleapis.com/v1beta1/projects/gen-lang-client-0459000055/sites/empireot [none]
+[debug] [2026-06-21T21:06:10.185Z] *** [apiv2] error from fetch(https://firebasehosting.googleapis.com/v1beta1/projects/gen-lang-client-0459000055/sites/empireot, {"headers":{},"method":"GET","agent":{"_events":{},"_eventsCount":2,"options":{"noDelay":true,"path":null},"requests":{},"sockets":{"firebasehosting.googleapis.com:443:::::::::::::::::::::":[]},"freeSockets":{},"keepAliveMsecs":1000,"keepAlive":false,"maxSockets":null,"maxFreeSockets":256,"scheduling":"lifo","maxTotalSockets":null,"totalSocketCount":0,"agentKeepAliveTimeoutBuffer":1000,"cache":{"max":20,"maxSize":0,"maxEntrySize":0,"fetchMethod":null,"keyMap":{},"keyList":["https:+http://127.0.0.1:9",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"valList":[{"_events":{},"_eventsCount":2,"options":{},"requests":{},"sockets":{"firebasehosting.googleapis.com:443:::::::::::::::::::::":[]},"freeSockets":{},"keepAliveMsecs":1000,"keepAlive":false,"maxSockets":null,"maxFreeSockets":256,"scheduling":"lifo","maxTotalSockets":null,"totalSocketCount":0,"agentKeepAliveTimeoutBuffer":1000,"proxy":"http://127.0.0.1:9/","proxyHeaders":{},"connectOpts":{"ALPNProtocols":["http/1.1"],"host":"127.0.0.1","port":9}},null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],"next":{"0":0,"1":0,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0,"10":0,"11":0,"12":0,"13":0,"14":0,"15":0,"16":0,"17":0,"18":0,"19":0},"prev":{"0":0,"1":0,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0,"10":0,"11":0,"12":0,"13":0,"14":0,"15":0,"16":0,"17":0,"18":0,"19":0},"head":0,"tail":0,"free":{"heap":{"0":0,"1":0,"2":0,"3":0,"4":0,"5":0,"6":0,"7":0,"8":0,"9":0,"10":0,"11":0,"12":0,"13":0,"14":0,"15":0,"16":0,"17":0,"18":0,"19":0},"length":0},"initialFill":1,"size":1,"disposeAfter":null,"disposed":null,"noDisposeOnSet":false,"noUpdateTTL":false,"noDeleteOnFetchRejection":false,"allowStaleOnFetchRejection":false,"allowStaleOnFetchAbort":false,"ignoreFetchAbort":false,"allowStale":false,"noDeleteOnStaleGet":false,"updateAgeOnGet":false,"updateAgeOnHas":false,"ttlResolution":1,"ttlAutopurge":false,"ttl":0},"httpAgent":{"_events":{},"_eventsCount":2,"options":{"noDelay":true,"path":null},"defaultPort":80,"protocol":"http:","requests":{},"sockets":{},"freeSockets":{},"keepAliveMsecs":1000,"keepAlive":false,"maxSockets":null,"maxFreeSockets":256,"scheduling":"lifo","maxTotalSockets":null,"totalSocketCount":0,"agentKeepAliveTimeoutBuffer":1000},"httpsAgent":{"_events":{},"_eventsCount":2,"options":{"defaultPort":443,"protocol":"https:","noDelay":true,"path":null},"defaultPort":443,"protocol":"https:","requests":{},"sockets":{},"freeSockets":{},"keepAliveMsecs":1000,"keepAlive":false,"maxSockets":null,"maxFreeSockets":256,"scheduling":"lifo","maxTotalSockets":null,"totalSocketCount":0,"agentKeepAliveTimeoutBuffer":1000,"maxCachedSessions":100,"_sessionCache":{"map":{},"list":[]}}}}): FetchError: request to https://firebasehosting.googleapis.com/v1beta1/projects/gen-lang-client-0459000055/sites/empireot failed, reason: connect ECONNREFUSED 127.0.0.1:9
+[debug] [2026-06-21T21:06:12.323Z] FetchError: request to https://firebasehosting.googleapis.com/v1beta1/projects/gen-lang-client-0459000055/sites/empireot failed, reason: connect ECONNREFUSED 127.0.0.1:9
+    at ClientRequest.<anonymous> (C:\Users\Digital Commerce\AppData\Roaming\npm\node_modules\firebase-tools\node_modules\node-fetch\lib\index.js:1501:11)
+    at ClientRequest.emit (node:events:508:28)
+    at emitErrorEvent (node:_http_client:108:11)
+    at _destroy (node:_http_client:963:9)
+    at onSocketNT (node:_http_client:983:5)
+    at process.processTicksAndRejections (node:internal/process/task_queues:91:21)
+[error] 
+[error] Error: Failed to make request to https://firebasehosting.googleapis.com/v1beta1/projects/gen-lang-client-0459000055/sites/empireot
+[debug] [2026-06-21T21:06:12.662Z] Error: EPERM: operation not permitted, open 'C:\Users\Digital Commerce\.config\configstore\firebase-tools.json.3290628446'
+    at Object.openSync (node:fs:560:18)
+    at writeFile.writeFileSync [as sync] (C:\Users\Digital Commerce\AppData\Roaming\npm\node_modules\firebase-tools\node_modules\write-file-atomic\index.js:205:13)
+    at set all (C:\Users\Digital Commerce\AppData\Roaming\npm\node_modules\firebase-tools\node_modules\configstore\index.js:61:20)
+    at Configstore.delete (C:\Users\Digital Commerce\AppData\Roaming\npm\node_modules\firebase-tools\node_modules\configstore\index.js:101:12)
+    at process.<anonymous> (C:\Users\Digital Commerce\AppData\Roaming\npm\node_modules\firebase-tools\lib\bin\cli.js:65:45)
+    at process.emit (node:events:520:35)
+    at process.exit (node:internal/process/per_thread:236:15)
+    at Timeout._onTimeout (C:\Users\Digital Commerce\AppData\Roaming\npm\node_modules\firebase-tools\lib\errorOut.js:20:17)
+    at listOnTimeout (node:internal/timers:605:17)
+    at process.processTimers (node:internal/timers:541:7)
+[error] 
+[error] Error: An unexpected error has occurred.
+[debug] [2026-06-21T21:12:30.850Z] ----------------------------------------------------------------------
+[debug] [2026-06-21T21:12:30.856Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\Digital Commerce\AppData\Roaming\npm\node_modules\firebase-tools\lib\bin\firebase.js deploy --only hosting:empireot
+[debug] [2026-06-21T21:12:30.856Z] CLI Version:   15.20.0
+[debug] [2026-06-21T21:12:30.856Z] Platform:      win32
+[debug] [2026-06-21T21:12:30.856Z] Node Version:  v24.14.0
+[debug] [2026-06-21T21:12:30.857Z] Time:          Sun Jun 21 2026 23:12:30 GMT+0200 (South Africa Standard Time)
+[debug] [2026-06-21T21:12:30.857Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-06-21T21:12:35.985Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-06-21T21:12:35.986Z] > authorizing via signed-in user (seigendc@gmail.com)
+[debug] [2026-06-21T21:12:35.986Z] [iam] checking project gen-lang-client-0459000055 for permissions ["firebase.projects.get","firebasehosting.sites.update"]
+[debug] [2026-06-21T21:12:35.988Z] Checked if tokens are valid: true, expires at: 1782079312614
+[debug] [2026-06-21T21:12:35.988Z] Checked if tokens are valid: true, expires at: 1782079312614
+[debug] [2026-06-21T21:12:35.989Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/gen-lang-client-0459000055:testIamPermissions [none]
+[debug] [2026-06-21T21:12:35.990Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/gen-lang-client-0459000055:testIamPermissions  x-goog-user-project=gen-lang-client-0459000055
+[debug] [2026-06-21T21:12:35.990Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/gen-lang-client-0459000055:testIamPermissions {"permissions":["firebase.projects.get","firebasehosting.sites.update"]}

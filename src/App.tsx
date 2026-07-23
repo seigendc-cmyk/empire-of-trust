@@ -8,7 +8,7 @@ import { GoogleAuthModal } from './components/auth/GoogleAuthModal';
 import { PWAInstallPrompt } from './components/pwa/PWAInstallPrompt';
 import { useDeviceAndPWA } from './hooks/useDeviceAndPWA';
 import { SplashScreen } from './components/SplashScreen';
-import { getSQLiteDB } from './lib/sqlite';
+import { getSQLiteDB, subscribeSQLiteEngineState } from './lib/sqlite';
 import { auth, logoutUser } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { getOrCreateDeviceId, getSavedPhoneNumber } from './lib/dataPack';
@@ -67,7 +67,13 @@ export default function App() {
 
   // Initialize SQLite local storage engine on startup
   useEffect(() => {
-    initLocalEngine();
+    const unsubscribe = subscribeSQLiteEngineState((state) => {
+      if (state.status === 'unavailable') {
+        setIsSqliteReady(false);
+      }
+    });
+    void initLocalEngine();
+    return unsubscribe;
   }, []);
 
   // Monitor Firebase Auth state
@@ -94,8 +100,8 @@ export default function App() {
     try {
       await getSQLiteDB();
       setIsSqliteReady(true);
-    } catch (err) {
-      console.error('Failed to boot SQLite WASM engine:', err);
+    } catch {
+      setIsSqliteReady(false);
     }
   };
 

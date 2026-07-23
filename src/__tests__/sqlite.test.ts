@@ -1,10 +1,11 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { webcrypto } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import initSqlJs, { Database, SqlJsStatic } from 'sql.js';
 import JSZip from 'jszip';
+import type { Book } from '../types';
 import {
   applyDatabaseMigrations,
   createLocalDatabaseBackup,
@@ -12,10 +13,17 @@ import {
   databaseMigrations,
   exportLocalDatabaseBackup,
   getDatabaseStartupStatus,
+  getSQLiteEngineState,
+  getSqlJsLocateFile,
   getDatabaseUserVersion,
   getSQLiteDB,
+  retrySQLiteInitialization,
+  restoreDefaultSQLiteEngineInitializerForTesting,
   restoreLocalDatabaseBackup,
+  saveBookToSQLite,
+  setSQLiteEngineInitializerForTesting,
   setSQLiteDatabaseForTesting,
+  SQL_WASM_URL,
   SQLITE_BACKUP_FORMAT_VERSION,
   SQLITE_BACKUP_PRODUCT_NAME,
   SQLITE_STORAGE_KEYS,
@@ -135,15 +143,113 @@ beforeEach(() => {
     wasmBinary.byteOffset,
     wasmBinary.byteOffset + wasmBinary.byteLength
   ) as ArrayBuffer;
-  globalThis.fetch = async () => new Response(wasmArrayBuffer, { status: 200 });
+  globalThis.fetch = vi.fn(async () => new Response(wasmArrayBuffer, { status: 200 }));
   setSQLiteDatabaseForTesting(null);
+  setSQLiteEngineInitializerForTesting(async () => SQL);
 });
 
 afterEach(() => {
-  setSQLiteDatabaseForTesting(null);
+  restoreDefaultSQLiteEngineInitializerForTesting();
   globalThis.fetch = originalFetch;
   globalThis.indexedDB = originalIndexedDB;
   Object.defineProperty(globalThis, 'crypto', { configurable: true, value: originalCrypto });
+});
+
+describe('SQLite WASM engine initialization', () => {
+  it('shares one initialization attempt between concurrent callers', async () => {
+    let resolveInitializer: ((SQL: SqlJsStatic) => void) | undefined;
+    const initializer = vi.fn(() => new Promise<SqlJsStatic>((resolve) => {
+      resolveInitializer = resolve;
+    }));
+    setSQLiteEngineInitializerForTesting(initializer);
+
+    const first = getSQLiteDB();
+    const second = getSQLiteDB();
+    await vi.waitFor(() => expect(resolveInitializer).toBeTypeOf('function'));
+    expect(initializer).toHaveBeenCalledTimes(1);
+
+    resolveInitializer?.(SQL);
+    const [firstDatabase, secondDatabase] = await Promise.all([first, second]);
+    expect(firstDatabase).toBe(secondDatabase);
+    expect(getSQLiteEngineState()).toMatchObject({ status: 'healthy', attempts: 1 });
+  });
+
+  it('uses the generated Vite WASM URL for the installed sql.js binary', async () => {
+    let locatedWasm = '';
+    setSQLiteEngineInitializerForTesting(async (config) => {
+      locatedWasm = config?.locateFile?.('sql-wasm.wasm', '') || '';
+      return SQL;
+    });
+
+    await getSQLiteDB();
+
+    expect(locatedWasm).toBe(SQL_WASM_URL);
+    expect(getSqlJsLocateFile('sql-wasm.wasm')).toBe(SQL_WASM_URL);
+    expect(SQL_WASM_URL).toContain('sql-wasm.wasm');
+  });
+
+  it('keeps a failed initialization memoized until explicit retry', async () => {
+    const initializer = vi.fn()
+      .mockRejectedValueOnce(new WebAssembly.CompileError('invalid WASM'))
+      .mockResolvedValueOnce(SQL);
+    setSQLiteEngineInitializerForTesting(initializer);
+
+    await expect(getSQLiteDB()).rejects.toThrow(/invalid WASM/);
+    await expect(getSQLiteDB()).rejects.toThrow(/invalid WASM/);
+    expect(initializer).toHaveBeenCalledTimes(1);
+    expect(getSQLiteEngineState()).toMatchObject({ status: 'unavailable', attempts: 1 });
+
+    await expect(retrySQLiteInitialization()).resolves.toBeInstanceOf(SQL.Database);
+    expect(initializer).toHaveBeenCalledTimes(2);
+    expect(getSQLiteEngineState()).toMatchObject({ status: 'healthy', attempts: 2 });
+  });
+
+  it('reports invalid WASM as a controlled storage-unavailable status', async () => {
+    setSQLiteEngineInitializerForTesting(async () => {
+      throw new WebAssembly.CompileError('section extends past end of the module');
+    });
+
+    await expect(getSQLiteDB()).rejects.toThrow(/section extends past end/);
+
+    expect(getSQLiteEngineState()).toMatchObject({
+      status: 'unavailable',
+      attempts: 1,
+      error: expect.stringMatching(/section extends past end/),
+    });
+    expect(getDatabaseStartupStatus()).toBe('storage-unavailable');
+  });
+
+  it('does not use a cross-version CDN fallback when the generated WASM is missing', async () => {
+    let requestedUrl = '';
+    const fetchSpy = vi.mocked(globalThis.fetch);
+    setSQLiteEngineInitializerForTesting(async (config) => {
+      requestedUrl = config?.locateFile?.('sql-wasm.wasm', '') || '';
+      throw new Error('WASM asset missing');
+    }, '/assets/sql-wasm-MISSING.wasm');
+
+    await expect(getSQLiteDB()).rejects.toThrow(/WASM asset missing/);
+
+    expect(requestedUrl).toBe('/assets/sql-wasm-MISSING.wasm');
+    expect(requestedUrl).not.toMatch(/^https?:/);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('does not create repeated initialization storms from save attempts', async () => {
+    const initializer = vi.fn(async () => {
+      throw new Error('WASM unavailable');
+    });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    setSQLiteEngineInitializerForTesting(initializer);
+
+    await expect(saveBookToSQLite({} as Book)).rejects.toThrow(/WASM unavailable/);
+    await expect(saveBookToSQLite({} as Book)).rejects.toThrow(/WASM unavailable/);
+    await expect(saveBookToSQLite({} as Book)).rejects.toThrow(/WASM unavailable/);
+
+    expect(initializer).toHaveBeenCalledTimes(1);
+    expect(getSQLiteEngineState().attempts).toBe(1);
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    consoleError.mockRestore();
+  });
 });
 
 describe('SQLite database migrations', () => {

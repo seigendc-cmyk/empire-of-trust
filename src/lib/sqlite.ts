@@ -1,4 +1,5 @@
-import initSqlJs, { Database } from 'sql.js';
+import initSqlJs, { Database, SqlJsStatic } from 'sql.js';
+import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
 import JSZip from 'jszip';
 import { Book, Chapter, ContentBlock, ReferenceItem, ReaderLibraryItem, Bookmark, HighlightNote, QuizAttempt } from '../types';
 
@@ -19,7 +20,36 @@ export const SQLITE_STORAGE_KEYS = {
 
 let dbInstance: Database | null = null;
 let initPromise: Promise<Database> | null = null;
+let sqlJsPromise: Promise<SqlJsStatic> | null = null;
 let databaseStartupStatus: DatabaseStartupStatus = 'loaded';
+export type SQLiteEngineInitializer = (
+  config?: Parameters<typeof initSqlJs>[0]
+) => Promise<SqlJsStatic>;
+const defaultSqlJsInitializer: SQLiteEngineInitializer = (config) => initSqlJs(config);
+let sqlJsInitializer: SQLiteEngineInitializer = defaultSqlJsInitializer;
+let configuredSqlWasmUrl = sqlWasmUrl;
+let initializationFailureReported = false;
+
+export const SQL_WASM_URL = sqlWasmUrl;
+
+export type SQLiteEngineStatus = 'idle' | 'initializing' | 'healthy' | 'unavailable';
+
+export interface SQLiteEngineState {
+  status: SQLiteEngineStatus;
+  error: string | null;
+  attempts: number;
+  wasmUrl: string;
+  sqliteVersion: string | null;
+}
+
+let sqliteEngineState: SQLiteEngineState = {
+  status: 'idle',
+  error: null,
+  attempts: 0,
+  wasmUrl: configuredSqlWasmUrl,
+  sqliteVersion: null,
+};
+const sqliteEngineListeners = new Set<(state: SQLiteEngineState) => void>();
 
 export interface DatabaseMigration {
   version: number;
@@ -32,6 +62,7 @@ export type DatabaseStartupStatus =
   | 'created'
   | 'recovered'
   | 'corrupted'
+  | 'storage-unavailable'
   | 'restore-required';
 
 export interface LocalDatabaseBackupManifest {
@@ -139,6 +170,34 @@ export function getDatabaseStartupStatus(): DatabaseStartupStatus {
   return databaseStartupStatus;
 }
 
+export function getSQLiteEngineState(): SQLiteEngineState {
+  return { ...sqliteEngineState };
+}
+
+export function subscribeSQLiteEngineState(
+  listener: (state: SQLiteEngineState) => void
+): () => void {
+  sqliteEngineListeners.add(listener);
+  listener(getSQLiteEngineState());
+  return () => sqliteEngineListeners.delete(listener);
+}
+
+function updateSQLiteEngineState(update: Partial<SQLiteEngineState>): void {
+  sqliteEngineState = { ...sqliteEngineState, ...update };
+  const snapshot = getSQLiteEngineState();
+  sqliteEngineListeners.forEach((listener) => listener(snapshot));
+}
+
+function reportSQLiteUnavailable(error: unknown): void {
+  const message = errorMessage(error);
+  databaseStartupStatus = 'storage-unavailable';
+  updateSQLiteEngineState({ status: 'unavailable', error: message, sqliteVersion: null });
+  if (!initializationFailureReported) {
+    initializationFailureReported = true;
+    console.error('Failed to initialize SQLite WASM engine:', error);
+  }
+}
+
 export function setSQLiteDatabaseForTesting(
   db: Database | null,
   status: DatabaseStartupStatus = db ? 'loaded' : 'created'
@@ -152,9 +211,35 @@ export function setSQLiteDatabaseForTesting(
   }
   dbInstance = db;
   initPromise = db ? Promise.resolve(db) : null;
+  sqlJsPromise = null;
   databaseStartupStatus = status;
+  initializationFailureReported = false;
+  updateSQLiteEngineState({
+    status: db ? 'healthy' : 'idle',
+    error: null,
+    attempts: 0,
+    wasmUrl: configuredSqlWasmUrl,
+    sqliteVersion: null,
+  });
   persistSeq = 0;
   lastPersist = Promise.resolve();
+}
+
+export function setSQLiteEngineInitializerForTesting(
+  initializer: SQLiteEngineInitializer,
+  wasmUrl = SQL_WASM_URL
+): void {
+  setSQLiteDatabaseForTesting(null);
+  sqlJsInitializer = initializer;
+  configuredSqlWasmUrl = wasmUrl;
+  updateSQLiteEngineState({ wasmUrl });
+}
+
+export function restoreDefaultSQLiteEngineInitializerForTesting(): void {
+  setSQLiteDatabaseForTesting(null);
+  sqlJsInitializer = defaultSqlJsInitializer;
+  configuredSqlWasmUrl = SQL_WASM_URL;
+  updateSQLiteEngineState({ wasmUrl: SQL_WASM_URL });
 }
 
 /**
@@ -354,52 +439,83 @@ export function applyDatabaseMigrations(
   }
 }
 
-/**
- * Helper to fetch WASM binary buffer from local or fallback CDN sources
- */
-async function loadWasmBinary(): Promise<ArrayBuffer> {
-  const urls = [
-    '/sql-wasm.wasm?v=1.14.1',
-    'https://cdn.jsdelivr.net/npm/sql.js@1.14.1/dist/sql-wasm.wasm',
-    'https://cdn.jsdelivr.net/npm/sql.js@1.12.0/dist/sql-wasm.wasm',
-    'https://sql.js.org/dist/sql-wasm.wasm',
-  ];
-
-  for (const url of urls) {
-    try {
-      const response = await fetch(url, { cache: 'no-cache' });
-      if (response.ok) {
-        const buffer = await response.arrayBuffer();
-        if (buffer && buffer.byteLength >= 4) {
-          const header = new Uint8Array(buffer, 0, 4);
-          if (header[0] === 0x00 && header[1] === 0x61 && header[2] === 0x73 && header[3] === 0x6d) {
-            return buffer;
-          } else {
-            console.warn(`Response from ${url} is not a valid WebAssembly binary.`);
-          }
-        }
-      }
-    } catch (e) {
-      console.warn(`Failed to fetch WASM from ${url}:`, e);
-    }
-  }
-
-  throw new Error('Could not fetch valid sql-wasm.wasm from local or fallback CDN sources.');
+export function getSqlJsLocateFile(file: string): string {
+  return file.endsWith('.wasm') ? configuredSqlWasmUrl : file;
 }
 
-async function initializeSqlJs() {
+/**
+ * A successful module load is not enough: instantiate SQLite and execute a
+ * query before exposing the engine as healthy.
+ */
+export function runSQLiteEngineHealthCheck(SQL: SqlJsStatic): string {
+  let healthDatabase: Database | null = null;
   try {
-    const wasmBuffer = await loadWasmBinary();
-    return await initSqlJs({
-      wasmBinary: wasmBuffer,
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/sql.js@1.14.1/dist/${file}`,
-    });
-  } catch (wasmError) {
-    console.warn('WASM ArrayBuffer fetch/compile strategy failed, trying CDN locateFile strategy:', wasmError);
-    return initSqlJs({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/sql.js@1.14.1/dist/${file}`,
-    });
+    healthDatabase = new SQL.Database();
+    const result = healthDatabase.exec('SELECT sqlite_version();');
+    const sqliteVersion = String(result[0]?.values[0]?.[0] ?? '');
+    if (!sqliteVersion) {
+      throw new Error('SQLite engine health check returned no version.');
+    }
+    return sqliteVersion;
+  } finally {
+    healthDatabase?.close();
   }
+}
+
+/**
+ * Load exactly one sql.js engine from the Vite-emitted URL. The promise,
+ * including a rejected result, remains shared until explicit retry.
+ */
+async function initializeSqlJs(): Promise<SqlJsStatic> {
+  if (sqlJsPromise) return sqlJsPromise;
+
+  updateSQLiteEngineState({
+    status: 'initializing',
+    error: null,
+    attempts: sqliteEngineState.attempts + 1,
+    wasmUrl: configuredSqlWasmUrl,
+    sqliteVersion: null,
+  });
+
+  sqlJsPromise = (async () => {
+    try {
+      const SQL = await sqlJsInitializer({
+        locateFile: getSqlJsLocateFile,
+      });
+      const sqliteVersion = runSQLiteEngineHealthCheck(SQL);
+      updateSQLiteEngineState({
+        status: 'healthy',
+        error: null,
+        sqliteVersion,
+      });
+      return SQL;
+    } catch (error) {
+      reportSQLiteUnavailable(error);
+      throw error;
+    }
+  })();
+
+  return sqlJsPromise;
+}
+
+export async function retrySQLiteInitialization(): Promise<Database> {
+  if (dbInstance) {
+    try {
+      dbInstance.close();
+    } catch (error) {
+      console.warn('Failed to close SQLite database before retry:', error);
+    }
+  }
+  dbInstance = null;
+  initPromise = null;
+  sqlJsPromise = null;
+  initializationFailureReported = false;
+  updateSQLiteEngineState({
+    status: 'idle',
+    error: null,
+    sqliteVersion: null,
+  });
+  return getSQLiteDB();
 }
 
 /**
@@ -459,8 +575,7 @@ export async function getSQLiteDB(): Promise<Database> {
         }
       }
       dbInstance = null;
-      initPromise = null;
-      console.error('Failed to initialize SQLite WASM engine:', error);
+      reportSQLiteUnavailable(error);
       throw error;
     }
   })();

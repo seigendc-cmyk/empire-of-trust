@@ -10,12 +10,37 @@ const mocks = vi.hoisted(() => ({
   publishBook: vi.fn(),
   fetchBooks: vi.fn(),
   exportPdf: vi.fn(),
+  retrySQLite: vi.fn(),
 }));
 
 vi.mock('../lib/sqlite', () => ({
   saveBookToSQLite: mocks.saveBook,
   deleteBookFromSQLite: mocks.deleteBook,
   getAllLocalBooks: mocks.getBooks,
+  getSQLiteEngineState: () => ({
+    status: 'healthy',
+    error: null,
+    attempts: 1,
+    wasmUrl: '/assets/sql-wasm-test.wasm',
+    sqliteVersion: '3.49.1',
+  }),
+  retrySQLiteInitialization: mocks.retrySQLite,
+  subscribeSQLiteEngineState: (listener: (state: {
+    status: string;
+    error: null;
+    attempts: number;
+    wasmUrl: string;
+    sqliteVersion: string;
+  }) => void) => {
+    listener({
+      status: 'healthy',
+      error: null,
+      attempts: 1,
+      wasmUrl: '/assets/sql-wasm-test.wasm',
+      sqliteVersion: '3.49.1',
+    });
+    return () => undefined;
+  },
 }));
 
 vi.mock('../lib/firebase', () => ({
@@ -166,6 +191,7 @@ beforeEach(() => {
   mocks.publishBook.mockReset().mockResolvedValue(undefined);
   mocks.fetchBooks.mockReset().mockResolvedValue([]);
   mocks.exportPdf.mockReset().mockResolvedValue(undefined);
+  mocks.retrySQLite.mockReset().mockResolvedValue(undefined);
   consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 });
 

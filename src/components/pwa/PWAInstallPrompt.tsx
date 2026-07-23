@@ -41,7 +41,7 @@ export const PWAInstallPrompt: React.FC<PWAInstallPromptProps> = ({
     else setActiveTab('desktop');
   }, [isIOS, isAndroid]);
 
-  if (isStandalone) {
+  if (isStandalone || !isInstallable) {
     return null;
   }
 
@@ -321,4 +321,3 @@ export const PWAInstallPrompt: React.FC<PWAInstallPromptProps> = ({
     </>
   );
 };
-

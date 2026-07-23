@@ -3,7 +3,7 @@ import {
   Plus, Edit3, Trash2, Eye, Share2, UploadCloud, Download, CheckCircle2, 
   Sparkles, BookOpen, Layers, DollarSign, Database, FileCode, Copy,
   MessageSquare, Key, Phone, Check, Archive, ArchiveRestore, Tag, Search,
-  RefreshCw, Hash, FileDown, FileText, Tv, User, Compass, Users, Shield, MoreVertical, Store
+  RefreshCw, Hash, FileDown, FileText, Tv, User, Compass, Users, Shield, MoreVertical, Store, AlertTriangle
 } from 'lucide-react';
 import { Book, Chapter, ContentBlock, FrontCover, BackCover, ReferenceItem, ReaderProfile, DEFAULT_BOOK_CATEGORIES, BookNumberingConfig, BookFrontMatter, BookSeriesConfig, Character, CharacterAsset } from '../../types';
 import { DocumentEditor } from './DocumentEditor';
@@ -18,7 +18,14 @@ import { AuthorContributorsModal } from './AuthorContributorsModal';
 import { CharacterAssetModal } from './CharacterAssetModal';
 import { ActivationDashboard } from './ActivationDashboard';
 import { VendorMarketingStudio } from './VendorMarketingStudio';
-import { saveBookToSQLite, deleteBookFromSQLite, getAllLocalBooks } from '../../lib/sqlite';
+import {
+  saveBookToSQLite,
+  deleteBookFromSQLite,
+  getAllLocalBooks,
+  getSQLiteEngineState,
+  retrySQLiteInitialization,
+  subscribeSQLiteEngineState,
+} from '../../lib/sqlite';
 import { publishBookToFirestore, fetchPublishedBooksFromFirestore } from '../../lib/firebase';
 import { generateRandomPopCode, formatPublisherReplyMessage, cleanPhoneNumber } from '../../lib/accessCodes';
 import { exportBookToPDF } from '../../lib/pdfExporter';
@@ -44,6 +51,8 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishSuccessMessage, setPublishSuccessMessage] = useState<string | null>(null);
+  const [sqliteEngineState, setSqliteEngineState] = useState(getSQLiteEngineState);
+  const [isRetryingSQLite, setIsRetryingSQLite] = useState(false);
 
   // Publisher POP Code Generator State
   const [generatedPopCode, setGeneratedPopCode] = useState<string | null>(null);
@@ -138,6 +147,8 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
     loadLocalBooks();
   }, []);
 
+  useEffect(() => subscribeSQLiteEngineState(setSqliteEngineState), []);
+
   const loadLocalBooks = async () => {
     try {
       const local = await getAllLocalBooks();
@@ -182,6 +193,18 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
   const switchStudioView = async (view: 'active' | 'archived' | 'activations') => {
     if (await flushSave()) {
       setStudioView(view);
+    }
+  };
+
+  const handleRetrySQLite = async () => {
+    setIsRetryingSQLite(true);
+    try {
+      await retrySQLiteInitialization();
+      await loadLocalBooks();
+    } catch {
+      // The shared engine state exposes the controlled error to the panel.
+    } finally {
+      setIsRetryingSQLite(false);
     }
   };
 
@@ -566,6 +589,47 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+      {sqliteEngineState.status === 'unavailable' && (
+        <section
+          role="alert"
+          className="rounded-xl border border-red-300 bg-red-50 p-5 text-red-950 shadow-sm"
+        >
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
+              <div>
+                <h2 className="font-bold">Local book storage is unavailable</h2>
+                <p className="mt-1 text-sm text-red-800">
+                  SQLite could not start, so Studio changes cannot be saved locally. Your existing IndexedDB data has not been deleted.
+                </p>
+                {sqliteEngineState.error && (
+                  <p className="mt-2 break-words font-mono text-xs text-red-700">
+                    {sqliteEngineState.error}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              <button
+                type="button"
+                onClick={() => void handleRetrySQLite()}
+                disabled={isRetryingSQLite}
+                className="inline-flex items-center gap-2 rounded-md bg-red-700 px-4 py-2 text-xs font-bold text-white hover:bg-red-800 disabled:opacity-60"
+              >
+                <RefreshCw className={`h-4 w-4 ${isRetryingSQLite ? 'animate-spin' : ''}`} />
+                {isRetryingSQLite ? 'Retrying…' : 'Retry'}
+              </button>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="rounded-md border border-red-300 bg-white px-4 py-2 text-xs font-bold text-red-800 hover:bg-red-100"
+              >
+                Reload
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
       
       {/* Studio Header & Action Controls */}
       <div className="bg-white border border-[#e0e0e0] rounded-xl p-6 shadow-sm space-y-4">

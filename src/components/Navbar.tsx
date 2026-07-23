@@ -119,7 +119,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="flex items-center gap-2 sm:gap-3">
               
               {/* PWA Install Trigger in Top Header */}
-              {!isStandalone && onPromptInstall && (
+              {isInstallable && !isStandalone && onPromptInstall && (
                 <button
                   onClick={onPromptInstall}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-[#ff6321] to-[#e55315] text-white font-bold text-xs shadow-sm hover:opacity-90 transition-all cursor-pointer"
@@ -230,7 +230,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     </div>
 
                     {/* Install PWA Button */}
-                    {!isStandalone && onPromptInstall && (
+                    {isInstallable && !isStandalone && onPromptInstall && (
                       <button
                         onClick={() => {
                           setIsMobileMenuOpen(false);
@@ -322,4 +322,3 @@ export const Navbar: React.FC<NavbarProps> = ({
     </>
   );
 };
-

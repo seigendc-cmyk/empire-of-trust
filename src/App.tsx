@@ -79,10 +79,12 @@ export default function App() {
           email: firebaseUser.email || '',
           displayName: firebaseUser.displayName || 'Google Author',
           photoURL: firebaseUser.photoURL || undefined,
-          phoneNumber: firebaseUser.phoneNumber || getSavedPhoneNumber() || '+263774479121',
+          phoneNumber: firebaseUser.phoneNumber || getSavedPhoneNumber() || '',
           deviceId: getOrCreateDeviceId(),
           registeredAt: new Date().toISOString(),
         });
+      } else {
+        setUser(null);
       }
     });
     return () => unsubscribe();

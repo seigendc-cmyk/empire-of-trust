@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Plus, Edit3, Trash2, Eye, Share2, UploadCloud, Download, CheckCircle2, 
   Sparkles, BookOpen, Layers, DollarSign, Database, FileCode, Copy,
@@ -23,6 +23,7 @@ import { publishBookToFirestore, fetchPublishedBooksFromFirestore } from '../../
 import { createBookDataPack, downloadBookDataPackFile, getOrCreateDeviceId } from '../../lib/dataPack';
 import { generateRandomPopCode, formatPublisherReplyMessage, cleanPhoneNumber } from '../../lib/accessCodes';
 import { exportBookToPDF } from '../../lib/pdfExporter';
+import { DebouncedSaveQueue } from '../../lib/debouncedSave';
 
 interface BookStudioProps {
   user: ReaderProfile | null;
@@ -49,7 +50,7 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
   const [generatedPopCode, setGeneratedPopCode] = useState<string | null>(null);
   const [copiedPopReply, setCopiedPopReply] = useState(false);
   const [copiedCodeOnly, setCopiedCodeOnly] = useState(false);
-  const [readerPhoneForActivation, setReaderPhoneForActivation] = useState<string>('+263774479121');
+  const [readerPhoneForActivation, setReaderPhoneForActivation] = useState<string>('');
   const [newCustomCodeInput, setNewCustomCodeInput] = useState('');
   const [customCategoryInput, setCustomCategoryInput] = useState('');
 
@@ -62,6 +63,22 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
   const [isCastModalOpen, setIsCastModalOpen] = useState(false);
   const [isExportingPDF, setIsExportingPDF] = useState(false);
   const [isStudioToolbarMenuOpen, setIsStudioToolbarMenuOpen] = useState(false);
+
+  const saveQueueRef = useRef<DebouncedSaveQueue<Book> | null>(null);
+  if (!saveQueueRef.current) {
+    saveQueueRef.current = new DebouncedSaveQueue(saveBookToSQLite, {
+      delayMs: 700,
+      onStatusChange: (status, error) => {
+        if (status === 'unsaved') setSaveStatus('Unsaved changes');
+        if (status === 'saving') setSaveStatus('Saving');
+        if (status === 'saved') setSaveStatus('Saved');
+        if (status === 'failed') {
+          setSaveStatus('Save failed');
+          console.error('Book Studio save failed:', error);
+        }
+      },
+    });
+  }
 
   const handleUpdateCharacters = (characters: Character[]) => {
     if (!activeBook) return;
@@ -97,6 +114,7 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
 
   const handleExportPDF = async () => {
     if (!activeBook) return;
+    if (!(await flushSave())) return;
     try {
       setIsExportingPDF(true);
       await exportBookToPDF(activeBook);
@@ -148,21 +166,74 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
   const activeBook = books.find((b) => b.id === activeBookId) || null;
   const activeChapter = activeBook?.chapters.find((c) => c.id === activeChapterId) || activeBook?.chapters[0] || null;
 
+  const scheduleSave = (book: Book) => {
+    saveQueueRef.current?.schedule(book);
+  };
+
+  const flushSave = async (): Promise<boolean> => {
+    try {
+      await saveQueueRef.current?.flush();
+      return true;
+    } catch (error) {
+      console.error('Book Studio save flush failed:', error);
+      return false;
+    }
+  };
+
+  const switchStudioView = async (view: 'active' | 'archived' | 'activations') => {
+    if (await flushSave()) {
+      setStudioView(view);
+    }
+  };
+
+  const switchActiveTab = async (tab: 'content' | 'covers' | 'references' | 'publish' | 'marketing') => {
+    if (await flushSave()) {
+      setActiveTab(tab);
+    }
+  };
+
+  const switchActiveBook = async (book: Book) => {
+    if (!(await flushSave())) return;
+    setActiveBookId(book.id);
+    setActiveChapterId(book.chapters[0]?.id || '');
+  };
+
+  useEffect(() => {
+    return () => {
+      void saveQueueRef.current?.dispose().catch((error) => {
+        console.error('Book Studio unmount save flush failed:', error);
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    const handlePageHide = () => {
+      void flushSave();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        void flushSave();
+      }
+    };
+
+    window.addEventListener('pagehide', handlePageHide);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('pagehide', handlePageHide);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
   // Auto-save active book to SQLite whenever changed
   const updateActiveBook = async (updatedBook: Book) => {
     const nextBooks = books.map((b) => (b.id === updatedBook.id ? updatedBook : b));
     setBooks(nextBooks);
-    try {
-      await saveBookToSQLite(updatedBook);
-      setSaveStatus('Saved to SQLite');
-      setTimeout(() => setSaveStatus(null), 2000);
-    } catch (err) {
-      console.error('SQLite auto-save error:', err);
-    }
+    scheduleSave(updatedBook);
   };
 
   // Archive book handler
   const handleArchiveBook = async (bookId: string) => {
+    if (!(await flushSave())) return;
     const target = books.find((b) => b.id === bookId);
     if (!target) return;
     const updated: Book = {
@@ -176,8 +247,8 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
     setTimeout(() => setSaveStatus(null), 2500);
   };
 
-  // Unarchive book handler
   const handleUnarchiveBook = async (bookId: string) => {
+    if (!(await flushSave())) return;
     const target = books.find((b) => b.id === bookId);
     if (!target) return;
     const updated: Book = {
@@ -191,8 +262,8 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
     setTimeout(() => setSaveStatus(null), 2500);
   };
 
-  // Sync published books from Firestore to retrieve them
   const handleSyncPublishedCloudBooks = async () => {
+    if (!(await flushSave())) return;
     setIsSyncingCloud(true);
     try {
       const cloudBooks = await fetchPublishedBooksFromFirestore();
@@ -223,6 +294,7 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
       e.stopPropagation();
     }
     try {
+      if (!(await flushSave())) return;
       const newBookId = 'book_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 6);
       const newChapId = 'chap_' + Math.random().toString(36).substring(2, 9);
       const newRefId = 'ref_' + Math.random().toString(36).substring(2, 9);
@@ -331,6 +403,7 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
   };
 
   const handleDeleteBook = async (bookId: string) => {
+    if (!(await flushSave())) return;
     const targetBook = books.find((b) => b.id === bookId);
     if (!window.confirm(`Are you sure you want to permanently delete "${targetBook?.title || 'this book'}" from local SQLite storage?`)) return;
     
@@ -457,6 +530,7 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
   // Publish to Firestore
   const handlePublishCloud = async () => {
     if (!activeBook) return;
+    if (!(await flushSave())) return;
     setIsPublishing(true);
     setPublishSuccessMessage(null);
     try {
@@ -467,7 +541,7 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
       };
       await publishBookToFirestore(updatedBook);
       await saveBookToSQLite(updatedBook);
-      updateActiveBook(updatedBook);
+      setBooks(books.map((b) => (b.id === updatedBook.id ? updatedBook : b)));
       setPublishSuccessMessage(`🎉 Book "${activeBook.title}" is published to Firebase Cloud database and live on the Public Portal!`);
     } catch (err: any) {
       console.error('Publish error:', err);
@@ -477,11 +551,11 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
     }
   };
 
-  // Export Zipped Book Data Pack
   const handleExportDataPack = async () => {
     if (!activeBook) return;
+    if (!(await flushSave())) return;
     const deviceId = getOrCreateDeviceId();
-    const phone = user?.phoneNumber || readerPhoneForActivation || '+263774479121';
+    const phone = user?.phoneNumber || readerPhoneForActivation || '';
     const pack = createBookDataPack(activeBook, phone, deviceId);
     await downloadBookDataPackFile(pack);
   };
@@ -544,7 +618,7 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
           {/* Active vs Archive Vault Tabs */}
           <div className="flex items-center gap-1 bg-[#f5f5f5] p-1 rounded-lg border border-[#e5e5e5]">
             <button
-              onClick={() => setStudioView('active')}
+              onClick={() => void switchStudioView('active')}
               className={`px-3 py-1.5 rounded-md font-bold flex items-center gap-1.5 transition-all ${
                 studioView === 'active'
                   ? 'bg-white text-[#ff6321] shadow-xs'
@@ -556,7 +630,7 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
             </button>
 
             <button
-              onClick={() => setStudioView('archived')}
+              onClick={() => void switchStudioView('archived')}
               className={`px-3 py-1.5 rounded-md font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                 studioView === 'archived'
                   ? 'bg-white text-amber-700 shadow-xs'
@@ -568,7 +642,7 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
             </button>
 
             <button
-              onClick={() => setStudioView('activations')}
+              onClick={() => void switchStudioView('activations')}
               className={`px-3 py-1.5 rounded-md font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                 studioView === 'activations'
                   ? 'bg-white text-[#128C7E] shadow-xs'
@@ -626,7 +700,7 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
         <ActivationDashboard
           books={books}
           onUpdateBook={updateActiveBook}
-          onClose={() => setStudioView('active')}
+          onClose={() => void switchStudioView('active')}
         />
       ) : (() => {
         const viewFiltered = books.filter((b) => (studioView === 'archived' ? b.isArchived : !b.isArchived));
@@ -675,10 +749,7 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
             {finalFiltered.map((b) => (
               <div
                 key={b.id}
-                onClick={() => {
-                  setActiveBookId(b.id);
-                  if (b.chapters.length > 0) setActiveChapterId(b.chapters[0].id);
-                }}
+                onClick={() => void switchActiveBook(b)}
                 className={`group p-4 rounded-lg border transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between ${
                   activeBookId === b.id
                     ? 'bg-[#ff6321]/5 border-[#ff6321] shadow-sm'
@@ -774,7 +845,7 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
             <div className="flex flex-wrap items-center gap-1 text-xs font-semibold">
               <button
                 id="tab-content"
-                onClick={() => setActiveTab('content')}
+                onClick={() => void switchActiveTab('content')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-md transition-all ${
                   activeTab === 'content'
                     ? 'bg-[#ff6321] text-white shadow-sm font-bold'
@@ -786,7 +857,7 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
 
               <button
                 id="tab-covers"
-                onClick={() => setActiveTab('covers')}
+                onClick={() => void switchActiveTab('covers')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-md transition-all ${
                   activeTab === 'covers'
                     ? 'bg-[#ff6321] text-white shadow-sm font-bold'
@@ -798,7 +869,7 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
 
               <button
                 id="tab-references"
-                onClick={() => setActiveTab('references')}
+                onClick={() => void switchActiveTab('references')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-md transition-all ${
                   activeTab === 'references'
                     ? 'bg-[#ff6321] text-white shadow-sm font-bold'
@@ -810,7 +881,7 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
 
               <button
                 id="tab-publish"
-                onClick={() => setActiveTab('publish')}
+                onClick={() => void switchActiveTab('publish')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-md transition-all ${
                   activeTab === 'publish'
                     ? 'bg-[#ff6321] text-white shadow-sm font-bold'
@@ -822,7 +893,7 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
 
               <button
                 id="tab-marketing"
-                onClick={() => setActiveTab('marketing')}
+                onClick={() => void switchActiveTab('marketing')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-md transition-all cursor-pointer ${
                   activeTab === 'marketing'
                     ? 'bg-orange-600 text-white shadow-sm font-bold'
@@ -1061,7 +1132,7 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
                     blocks={activeChapter.blocks}
                     onChangeBlocks={handleUpdateChapterBlocks}
                     references={activeBook.references}
-                    onAddReference={() => setActiveTab('references')}
+                    onAddReference={() => void switchActiveTab('references')}
                   />
                 ) : (
                   <div className="p-8 text-center bg-[#1e2023] rounded-2xl border border-gray-800 text-gray-400">
@@ -1425,7 +1496,7 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
 
                       <button
                         type="button"
-                        onClick={() => setStudioView('activations')}
+                        onClick={() => void switchStudioView('activations')}
                         className="w-full py-2 px-3 rounded-lg bg-white border border-[#128C7E]/40 hover:bg-[#128C7E]/5 text-[#128C7E] font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                       >
                         <MessageSquare className="w-3.5 h-3.5 text-[#128C7E]" /> Open Full WhatsApp Activation Dashboard

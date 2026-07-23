@@ -4,7 +4,7 @@ import {
   Smartphone as PhoneIcon, Key, AlertTriangle, Sparkles, Database, FileText, Clock, Archive, Search, X, CheckSquare, Square, ListChecks, Check, MessageSquare, Lock, ShieldAlert,
   Wifi, WifiOff, Globe, Download, DownloadCloud, Store, ShoppingBag, Tag, RefreshCw
 } from 'lucide-react';
-import { Book, ReaderProfile, ReaderLibraryItem, DEFAULT_BOOK_CATEGORIES } from '../../types';
+import { Book, ReaderProfile, ReaderLibraryItem, DEFAULT_BOOK_CATEGORIES, RenewalAuthorization } from '../../types';
 import { getReaderLibrarySQLite, saveToReaderLibrarySQLite, saveBookToSQLite, getAllLocalBooks, deleteFromReaderLibrarySQLite } from '../../lib/sqlite';
 import { getOrCreateDeviceId, getSavedPhoneNumber, verifyAndExtractBookDataPack, extractDataPackFromFile, savePhoneNumber, checkDataPackExpiration, renewBookDataPackJson, createBookDataPack, downloadBookDataPackFile } from '../../lib/dataPack';
 import { verifyAccessCode, formatWhatsAppPopUrl } from '../../lib/accessCodes';
@@ -53,7 +53,7 @@ export const ReaderShell: React.FC<ReaderShellProps> = ({
   const [renewalStatus, setRenewalStatus] = useState<{ success: boolean; message: string } | null>(null);
 
   // Reader Phone & Device ID
-  const [readerPhone, setReaderPhone] = useState(getSavedPhoneNumber() || user?.phoneNumber || '+263774479121');
+  const [readerPhone, setReaderPhone] = useState(getSavedPhoneNumber() || user?.phoneNumber || '');
   const [deviceId, setDeviceId] = useState(getOrCreateDeviceId());
 
   // Online Connectivity & Online Store Catalog State
@@ -419,8 +419,15 @@ export const ReaderShell: React.FC<ReaderShellProps> = ({
 
     if (result.isValid) {
       try {
-        // Extend book data pack expiration for 30 days without re-downloading
-        const { updatedJson, newExpiresAt } = renewBookDataPackJson(item.dataPackJson, 30);
+        const auth: RenewalAuthorization = {
+          activationCode: code.trim(),
+          bookId: book.id,
+          boundPhoneNumber: item.boundPhoneNumber || readerPhone,
+          issuedAt: new Date().toISOString(),
+          extensionDays: 30,
+        };
+
+        const { updatedJson, newExpiresAt } = renewBookDataPackJson(item.dataPackJson, auth, 30);
 
         const updatedItem: ReaderLibraryItem = {
           ...item,

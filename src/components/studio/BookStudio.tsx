@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Plus, Edit3, Trash2, Eye, Share2, UploadCloud, Download, CheckCircle2, 
   Sparkles, BookOpen, Layers, DollarSign, Database, FileCode, Copy,
@@ -49,7 +49,7 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
   const [generatedPopCode, setGeneratedPopCode] = useState<string | null>(null);
   const [copiedPopReply, setCopiedPopReply] = useState(false);
   const [copiedCodeOnly, setCopiedCodeOnly] = useState(false);
-  const [readerPhoneForActivation, setReaderPhoneForActivation] = useState<string>('+263774479121');
+  const [readerPhoneForActivation, setReaderPhoneForActivation] = useState<string>('');
   const [newCustomCodeInput, setNewCustomCodeInput] = useState('');
   const [customCategoryInput, setCustomCategoryInput] = useState('');
 
@@ -62,6 +62,10 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
   const [isCastModalOpen, setIsCastModalOpen] = useState(false);
   const [isExportingPDF, setIsExportingPDF] = useState(false);
   const [isStudioToolbarMenuOpen, setIsStudioToolbarMenuOpen] = useState(false);
+
+  const saveTimerRef = useRef<number | null>(null);
+  const pendingSaveRef = useRef(false);
+  const activeBookRef = useRef<Book | null>(null);
 
   const handleUpdateCharacters = (characters: Character[]) => {
     if (!activeBook) return;
@@ -146,19 +150,74 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
   };
 
   const activeBook = books.find((b) => b.id === activeBookId) || null;
+  activeBookRef.current = activeBook;
   const activeChapter = activeBook?.chapters.find((c) => c.id === activeChapterId) || activeBook?.chapters[0] || null;
+
+  const scheduleSave = async () => {
+    pendingSaveRef.current = true;
+    setSaveStatus('Unsaved changes');
+
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+    }
+
+    saveTimerRef.current = window.setTimeout(async () => {
+      setSaveStatus('Saving...');
+      try {
+        const currentBook = activeBookRef.current;
+        if (currentBook) {
+          await saveBookToSQLite(currentBook);
+          setSaveStatus('Saved to SQLite');
+          setTimeout(() => setSaveStatus(null), 2000);
+        }
+      } catch (err) {
+        setSaveStatus('Save failed');
+        console.error('Debounced save error:', err);
+      } finally {
+        pendingSaveRef.current = false;
+      }
+    }, 700);
+  };
+
+  const flushSave = async () => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    const currentBook = activeBookRef.current;
+    if (currentBook && pendingSaveRef.current) {
+      setSaveStatus('Saving...');
+      try {
+        await saveBookToSQLite(currentBook);
+        pendingSaveRef.current = false;
+        setSaveStatus('Saved to SQLite');
+        setTimeout(() => setSaveStatus(null), 2000);
+      } catch (err) {
+        setSaveStatus('Save failed');
+        console.error('Flush save error:', err);
+        pendingSaveRef.current = false;
+      }
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      const currentBook = activeBookRef.current;
+      if (currentBook && pendingSaveRef.current) {
+        saveBookToSQLite(currentBook).catch(() => {});
+      }
+    };
+  }, []);
 
   // Auto-save active book to SQLite whenever changed
   const updateActiveBook = async (updatedBook: Book) => {
     const nextBooks = books.map((b) => (b.id === updatedBook.id ? updatedBook : b));
     setBooks(nextBooks);
-    try {
-      await saveBookToSQLite(updatedBook);
-      setSaveStatus('Saved to SQLite');
-      setTimeout(() => setSaveStatus(null), 2000);
-    } catch (err) {
-      console.error('SQLite auto-save error:', err);
-    }
+    scheduleSave();
   };
 
   // Archive book handler
@@ -176,7 +235,6 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
     setTimeout(() => setSaveStatus(null), 2500);
   };
 
-  // Unarchive book handler
   const handleUnarchiveBook = async (bookId: string) => {
     const target = books.find((b) => b.id === bookId);
     if (!target) return;
@@ -191,7 +249,6 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
     setTimeout(() => setSaveStatus(null), 2500);
   };
 
-  // Sync published books from Firestore to retrieve them
   const handleSyncPublishedCloudBooks = async () => {
     setIsSyncingCloud(true);
     try {
@@ -331,6 +388,7 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
   };
 
   const handleDeleteBook = async (bookId: string) => {
+    await flushSave();
     const targetBook = books.find((b) => b.id === bookId);
     if (!window.confirm(`Are you sure you want to permanently delete "${targetBook?.title || 'this book'}" from local SQLite storage?`)) return;
     
@@ -460,6 +518,7 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
     setIsPublishing(true);
     setPublishSuccessMessage(null);
     try {
+      await flushSave();
       const updatedBook = {
         ...activeBook,
         isPublished: true,
@@ -467,7 +526,7 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
       };
       await publishBookToFirestore(updatedBook);
       await saveBookToSQLite(updatedBook);
-      updateActiveBook(updatedBook);
+      setBooks(books.map((b) => (b.id === updatedBook.id ? updatedBook : b)));
       setPublishSuccessMessage(`🎉 Book "${activeBook.title}" is published to Firebase Cloud database and live on the Public Portal!`);
     } catch (err: any) {
       console.error('Publish error:', err);
@@ -477,11 +536,11 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
     }
   };
 
-  // Export Zipped Book Data Pack
   const handleExportDataPack = async () => {
     if (!activeBook) return;
+    await flushSave();
     const deviceId = getOrCreateDeviceId();
-    const phone = user?.phoneNumber || readerPhoneForActivation || '+263774479121';
+    const phone = user?.phoneNumber || readerPhoneForActivation || '';
     const pack = createBookDataPack(activeBook, phone, deviceId);
     await downloadBookDataPackFile(pack);
   };
@@ -675,7 +734,8 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
             {finalFiltered.map((b) => (
               <div
                 key={b.id}
-                onClick={() => {
+                onClick={async () => {
+                  await flushSave();
                   setActiveBookId(b.id);
                   if (b.chapters.length > 0) setActiveChapterId(b.chapters[0].id);
                 }}

@@ -426,6 +426,14 @@ export interface ActivationRequest {
   notes?: string;
 }
 
+export interface RenewalAuthorization {
+  activationCode: string;
+  bookId: string;
+  boundPhoneNumber: string;
+  issuedAt: string;
+  extensionDays: number;
+}
+
 export interface SqlQueryResult {
   columns: string[];
   values: any[][];

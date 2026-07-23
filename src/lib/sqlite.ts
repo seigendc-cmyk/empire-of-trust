@@ -45,23 +45,42 @@ async function loadDbFromIndexedDB(): Promise<Uint8Array | null> {
 }
 
 /**
- * Persist SQLite DB Uint8Array bytes to IndexedDB
+ * Serialized persistence queue for IndexedDB writes.
+ * Prevents older exports from overwriting newer ones and exposes write errors.
  */
+let persistSeq = 0;
+let lastPersist: Promise<void> = Promise.resolve();
+
 export async function persistDbToIndexedDB(): Promise<void> {
   if (!dbInstance) return;
-  try {
+
+  const mySeq = ++persistSeq;
+
+  const task = async (): Promise<void> => {
+    if (mySeq !== persistSeq || !dbInstance) return;
+
     const data = dbInstance.export();
     const idb = await openIndexedDB();
-    return new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       const tx = idb.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
       const req = store.put(data, DB_KEY);
       req.onsuccess = () => resolve();
       req.onerror = () => reject(req.error);
     });
-  } catch (err) {
-    console.warn('IndexedDB write error:', err);
-  }
+  };
+
+  lastPersist = (async () => {
+    try {
+      await lastPersist;
+    } catch {
+      // Previous save failed, but continue with current task if still relevant
+    }
+    if (mySeq !== persistSeq || !dbInstance) return;
+    return task();
+  })();
+
+  return lastPersist;
 }
 
 /**
@@ -82,7 +101,6 @@ async function loadWasmBinary(): Promise<ArrayBuffer> {
         const buffer = await response.arrayBuffer();
         if (buffer && buffer.byteLength >= 4) {
           const header = new Uint8Array(buffer, 0, 4);
-          // Check for WASM magic header '\0asm' (0x00, 0x61, 0x73, 0x6d)
           if (header[0] === 0x00 && header[1] === 0x61 && header[2] === 0x73 && header[3] === 0x6d) {
             return buffer;
           } else {
@@ -133,7 +151,7 @@ export async function getSQLiteDB(): Promise<Database> {
         dbInstance = new SQL.Database();
       }
 
-      // Initialize SQLite Schema
+      dbInstance.run('PRAGMA foreign_keys = ON;');
       dbInstance.run(`
         CREATE TABLE IF NOT EXISTS local_books (
           id TEXT PRIMARY KEY,
@@ -250,7 +268,6 @@ export async function getSQLiteDB(): Promise<Database> {
         );
       `);
 
-      // Safe migrations for existing SQLite databases
       try { dbInstance.run("ALTER TABLE local_books ADD COLUMN category TEXT DEFAULT 'General';"); } catch(e) {}
       try { dbInstance.run("ALTER TABLE local_books ADD COLUMN genre TEXT;"); } catch(e) {}
       try { dbInstance.run("ALTER TABLE local_books ADD COLUMN sub_genre TEXT;"); } catch(e) {}
@@ -296,9 +313,18 @@ function safeExec(db: Database, sql: string, params: any[] = []): any[] {
 }
 
 /**
- * Execute custom raw SQL statement (DML/DQL)
+ * Execute a read-only SQL query without persisting.
  */
-export async function executeRawSql(sql: string, params: any[] = []): Promise<any[]> {
+export async function executeQuery(sql: string, params: any[] = []): Promise<any[]> {
+  const db = await getSQLiteDB();
+  const res = safeExec(db, sql, params);
+  return res;
+}
+
+/**
+ * Execute a mutating SQL statement and persist the database.
+ */
+export async function executeMutation(sql: string, params: any[] = []): Promise<any[]> {
   const db = await getSQLiteDB();
   const res = safeExec(db, sql, params);
   await persistDbToIndexedDB();
@@ -310,110 +336,133 @@ export async function executeRawSql(sql: string, params: any[] = []): Promise<an
  */
 export async function saveBookToSQLite(book: Book): Promise<void> {
   const db = await getSQLiteDB();
-
-  safeRun(
-    db,
-    `INSERT OR REPLACE INTO local_books 
-      (id, title, subtitle, author, publisher_id, description, category, genre, sub_genre, tags_json, target_audience, language, author_details_json, contributors_json, numbering_config_json, front_matter_json, series_config_json, characters_json, assets_json, is_archived, archived_at, whatsapp_number, access_codes_json, price, currency, cover_front_json, cover_back_json, is_published, created_at, updated_at, version)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
-    [
-      book.id || '',
-      book.title || '',
-      book.subtitle || '',
-      book.author || '',
-      book.publisherId || '',
-      book.description || '',
-      book.category || 'General Non-Fiction',
-      book.genre || '',
-      book.subGenre || '',
-      JSON.stringify(book.tags || []),
-      book.targetAudience || '',
-      book.language || 'English (US)',
-      JSON.stringify(book.authorDetails || {}),
-      JSON.stringify(book.contributors || []),
-      JSON.stringify(book.numberingConfig || {
-        numberingStyle: 'arabic',
-        numberingPrefix: 'Chapter',
-        numberingSuffix: '',
-        chapterDesignStyle: 'classic',
-        showChapterNumbersInTOC: true,
-      }),
-      JSON.stringify(book.frontMatter || {}),
-      JSON.stringify(book.seriesConfig || {}),
-      JSON.stringify(book.characters || []),
-      JSON.stringify(book.assets || []),
-      book.isArchived ? 1 : 0,
-      book.archivedAt || '',
-      book.whatsappNumber || '',
-      JSON.stringify(book.accessCodes || []),
-      typeof book.price === 'number' ? book.price : 0,
-      book.currency || 'USD',
-      JSON.stringify(book.coverFront || {}),
-      JSON.stringify(book.coverBack || {}),
-      book.isPublished ? 1 : 0,
-      book.createdAt || new Date().toISOString(),
-      book.updatedAt || new Date().toISOString(),
-      book.version || '1.0.0',
-    ]
-  );
-
-  // Chapters & blocks
-  for (const chapter of book.chapters || []) {
+  db.run('PRAGMA foreign_keys = ON;');
+  db.run('BEGIN TRANSACTION;');
+  try {
     safeRun(
       db,
-      `INSERT OR REPLACE INTO local_chapters (id, book_id, title, chapter_number, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?);`,
+      `INSERT OR REPLACE INTO local_books
+       (id, title, subtitle, author, publisher_id, description, category, genre, sub_genre, tags_json, target_audience, language, author_details_json, contributors_json, numbering_config_json, front_matter_json, series_config_json, characters_json, assets_json, is_archived, archived_at, whatsapp_number, access_codes_json, price, currency, cover_front_json, cover_back_json, is_published, created_at, updated_at, version)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       [
-        chapter.id || '',
         book.id || '',
-        chapter.title || '',
-        typeof chapter.chapterNumber === 'number' ? chapter.chapterNumber : 1,
-        chapter.createdAt || new Date().toISOString(),
-        chapter.updatedAt || new Date().toISOString(),
+        book.title || '',
+        book.subtitle || '',
+        book.author || '',
+        book.publisherId || '',
+        book.description || '',
+        book.category || 'General Non-Fiction',
+        book.genre || '',
+        book.subGenre || '',
+        JSON.stringify(book.tags || []),
+        book.targetAudience || '',
+        book.language || 'English (US)',
+        JSON.stringify(book.authorDetails || {}),
+        JSON.stringify(book.contributors || []),
+        JSON.stringify(book.numberingConfig || {
+          numberingStyle: 'arabic',
+          numberingPrefix: 'Chapter',
+          numberingSuffix: '',
+          chapterDesignStyle: 'classic',
+          showChapterNumbersInTOC: true,
+        }),
+        JSON.stringify(book.frontMatter || {}),
+        JSON.stringify(book.seriesConfig || {}),
+        JSON.stringify(book.characters || []),
+        JSON.stringify(book.assets || []),
+        book.isArchived ? 1 : 0,
+        book.archivedAt || '',
+        book.whatsappNumber || '',
+        JSON.stringify(book.accessCodes || []),
+        typeof book.price === 'number' ? book.price : 0,
+        book.currency || 'USD',
+        JSON.stringify(book.coverFront || {}),
+        JSON.stringify(book.coverBack || {}),
+        book.isPublished ? 1 : 0,
+        book.createdAt || new Date().toISOString(),
+        book.updatedAt || new Date().toISOString(),
+        book.version || '1.0.0',
       ]
     );
 
-    // Delete old blocks for this chapter first to keep clean
-    safeRun(db, `DELETE FROM local_content_blocks WHERE chapter_id = ?;`, [chapter.id]);
+    const incomingChapterIds = new Set((book.chapters || []).map(c => c.id));
 
-    for (const block of chapter.blocks || []) {
+    if (incomingChapterIds.size === 0) {
+      safeRun(db, `DELETE FROM local_content_blocks WHERE chapter_id IN (SELECT id FROM local_chapters WHERE book_id = ?);`, [book.id]);
+      safeRun(db, `DELETE FROM local_chapters WHERE book_id = ?;`, [book.id]);
+    } else {
+      const placeholders = Array.from(incomingChapterIds).map(() => '?').join(',');
       safeRun(
         db,
-        `INSERT OR REPLACE INTO local_content_blocks (id, chapter_id, block_type, content, meta_json, order_index)
+        `DELETE FROM local_content_blocks WHERE chapter_id IN (SELECT id FROM local_chapters WHERE book_id = ? AND id NOT IN (${placeholders}));`,
+        [book.id, ...Array.from(incomingChapterIds)]
+      );
+      safeRun(
+        db,
+        `DELETE FROM local_chapters WHERE book_id = ? AND id NOT IN (${placeholders});`,
+        [book.id, ...Array.from(incomingChapterIds)]
+      );
+    }
+
+    for (const chapter of book.chapters || []) {
+      safeRun(
+        db,
+        `INSERT OR REPLACE INTO local_chapters (id, book_id, title, chapter_number, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?);`,
         [
-          block.id || '',
           chapter.id || '',
-          block.type || 'paragraph',
-          block.content || '',
-          JSON.stringify(block.meta || {}),
-          typeof block.orderIndex === 'number' ? block.orderIndex : 0,
+          book.id || '',
+          chapter.title || '',
+          typeof chapter.chapterNumber === 'number' ? chapter.chapterNumber : 1,
+          chapter.createdAt || new Date().toISOString(),
+          chapter.updatedAt || new Date().toISOString(),
+        ]
+      );
+
+      safeRun(db, `DELETE FROM local_content_blocks WHERE chapter_id = ?;`, [chapter.id]);
+
+      for (const block of chapter.blocks || []) {
+        safeRun(
+          db,
+          `INSERT OR REPLACE INTO local_content_blocks (id, chapter_id, block_type, content, meta_json, order_index)
+           VALUES (?, ?, ?, ?, ?, ?);`,
+          [
+            block.id || '',
+            chapter.id || '',
+            block.type || 'paragraph',
+            block.content || '',
+            JSON.stringify(block.meta || {}),
+            typeof block.orderIndex === 'number' ? block.orderIndex : 0,
+          ]
+        );
+      }
+    }
+
+    safeRun(db, `DELETE FROM local_references WHERE book_id = ?;`, [book.id]);
+
+    for (const ref of book.references || []) {
+      safeRun(
+        db,
+        `INSERT OR REPLACE INTO local_references (id, book_id, citation_key, title, authors, publication_year, journal_publisher, url, notes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        [
+          ref.id || '',
+          book.id || '',
+          ref.citationKey || '',
+          ref.title || '',
+          ref.authors || '',
+          ref.publicationYear || '',
+          ref.journalOrPublisher || '',
+          ref.url || '',
+          ref.notes || '',
         ]
       );
     }
-  }
 
-  // Delete old references first
-  safeRun(db, `DELETE FROM local_references WHERE book_id = ?;`, [book.id]);
-
-  // References
-  for (const ref of book.references || []) {
-    safeRun(
-      db,
-      `INSERT OR REPLACE INTO local_references (id, book_id, citation_key, title, authors, publication_year, journal_publisher, url, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
-      [
-        ref.id || '',
-        book.id || '',
-        ref.citationKey || '',
-        ref.title || '',
-        ref.authors || '',
-        ref.publicationYear || '',
-        ref.journalOrPublisher || '',
-        ref.url || '',
-        ref.notes || '',
-      ]
-    );
+    db.run('COMMIT;');
+  } catch (e) {
+    try { db.run('ROLLBACK;'); } catch {}
+    throw e;
   }
 
   await persistDbToIndexedDB();
@@ -426,8 +475,8 @@ export async function getAllLocalBooks(): Promise<Book[]> {
   const db = await getSQLiteDB();
 
   const booksResult = safeExec(db, `
-    SELECT id, title, subtitle, author, publisher_id, description, category, genre, sub_genre, tags_json, target_audience, language, author_details_json, contributors_json, numbering_config_json, front_matter_json, series_config_json, characters_json, assets_json, is_archived, archived_at, whatsapp_number, access_codes_json, price, currency, cover_front_json, cover_back_json, is_published, created_at, updated_at, version 
-    FROM local_books 
+    SELECT id, title, subtitle, author, publisher_id, description, category, genre, sub_genre, tags_json, target_audience, language, author_details_json, contributors_json, numbering_config_json, front_matter_json, series_config_json, characters_json, assets_json, is_archived, archived_at, whatsapp_number, access_codes_json, price, currency, cover_front_json, cover_back_json, is_published, created_at, updated_at, version
+    FROM local_books
     ORDER BY updated_at DESC;
   `);
   if (!booksResult.length) return [];
@@ -443,11 +492,11 @@ export async function getAllLocalBooks(): Promise<Book[]> {
     const publisherId = row[4] as string;
     const description = row[5] as string;
     const category = (row[6] as string) || 'General Non-Fiction';
-    const genre = (row[7] as string) || '';
-    const subGenre = (row[8] as string) || '';
+    const genre = row[7] as string;
+    const subGenre = row[8] as string;
     const tags = JSON.parse((row[9] as string) || '[]');
-    const targetAudience = (row[10] as string) || '';
-    const language = (row[11] as string) || 'English (US)';
+    const targetAudience = row[10] as string;
+    const language = row[11] as string;
     const authorDetails = JSON.parse((row[12] as string) || '{}');
     const contributors = JSON.parse((row[13] as string) || '[]');
     const numberingConfig = JSON.parse((row[14] as string) || '{"numberingStyle":"arabic","numberingPrefix":"Chapter","numberingSuffix":"","chapterDesignStyle":"classic","showChapterNumbersInTOC":true}');
@@ -468,7 +517,6 @@ export async function getAllLocalBooks(): Promise<Book[]> {
     const updatedAt = row[29] as string;
     const version = row[30] as string;
 
-    // Load chapters
     const chapRes = safeExec(db, 'SELECT * FROM local_chapters WHERE book_id = ? ORDER BY chapter_number ASC;', [bookId]);
     const chapters: Chapter[] = [];
 
@@ -480,7 +528,6 @@ export async function getAllLocalBooks(): Promise<Book[]> {
         const chapCreated = chapRow[4] as string;
         const chapUpdated = chapRow[5] as string;
 
-        // Load blocks
         const blockRes = safeExec(db, 'SELECT * FROM local_content_blocks WHERE chapter_id = ? ORDER BY order_index ASC;', [chapId]);
         const blocks: ContentBlock[] = [];
 
@@ -509,7 +556,6 @@ export async function getAllLocalBooks(): Promise<Book[]> {
       }
     }
 
-    // Load references
     const refRes = safeExec(db, 'SELECT * FROM local_references WHERE book_id = ?;', [bookId]);
     const references: ReferenceItem[] = [];
 
@@ -574,10 +620,18 @@ export async function getAllLocalBooks(): Promise<Book[]> {
  */
 export async function deleteBookFromSQLite(bookId: string): Promise<void> {
   const db = await getSQLiteDB();
-  safeRun(db, `DELETE FROM local_content_blocks WHERE chapter_id IN (SELECT id FROM local_chapters WHERE book_id = ?);`, [bookId]);
-  safeRun(db, `DELETE FROM local_chapters WHERE book_id = ?;`, [bookId]);
-  safeRun(db, `DELETE FROM local_references WHERE book_id = ?;`, [bookId]);
-  safeRun(db, `DELETE FROM local_books WHERE id = ?;`, [bookId]);
+  db.run('PRAGMA foreign_keys = ON;');
+  db.run('BEGIN TRANSACTION;');
+  try {
+    safeRun(db, `DELETE FROM local_content_blocks WHERE chapter_id IN (SELECT id FROM local_chapters WHERE book_id = ?);`, [bookId]);
+    safeRun(db, `DELETE FROM local_chapters WHERE book_id = ?;`, [bookId]);
+    safeRun(db, `DELETE FROM local_references WHERE book_id = ?;`, [bookId]);
+    safeRun(db, `DELETE FROM local_books WHERE id = ?;`, [bookId]);
+    db.run('COMMIT;');
+  } catch (e) {
+    try { db.run('ROLLBACK;'); } catch {}
+    throw e;
+  }
   await persistDbToIndexedDB();
 }
 
@@ -586,25 +640,33 @@ export async function deleteBookFromSQLite(bookId: string): Promise<void> {
  */
 export async function saveToReaderLibrarySQLite(item: ReaderLibraryItem): Promise<void> {
   const db = await getSQLiteDB();
-  safeRun(
-    db,
-    `INSERT OR REPLACE INTO reader_library
-     (id, book_id, book_title, author, cover_front_json, bound_phone, bound_device_id, downloaded_at, data_pack_json, last_read_chapter_id, last_read_scroll_pos)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
-    [
-      item.id || '',
-      item.bookId || '',
-      item.bookTitle || '',
-      item.author || '',
-      JSON.stringify(item.coverFront || {}),
-      item.boundPhoneNumber || '',
-      item.boundDeviceId || '',
-      item.downloadedAt || new Date().toISOString(),
-      item.dataPackJson || '',
-      item.lastReadChapterId || '',
-      item.lastReadScrollPos || 0,
-    ]
-  );
+  db.run('PRAGMA foreign_keys = ON;');
+  db.run('BEGIN TRANSACTION;');
+  try {
+    safeRun(
+      db,
+      `INSERT OR REPLACE INTO reader_library
+       (id, book_id, book_title, author, cover_front_json, bound_phone, bound_device_id, downloaded_at, data_pack_json, last_read_chapter_id, last_read_scroll_pos)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+      [
+        item.id || '',
+        item.bookId || '',
+        item.bookTitle || '',
+        item.author || '',
+        JSON.stringify(item.coverFront || {}),
+        item.boundPhoneNumber || '',
+        item.boundDeviceId || '',
+        item.downloadedAt || new Date().toISOString(),
+        item.dataPackJson || '',
+        item.lastReadChapterId || '',
+        item.lastReadScrollPos || 0,
+      ]
+    );
+    db.run('COMMIT;');
+  } catch (e) {
+    try { db.run('ROLLBACK;'); } catch {}
+    throw e;
+  }
   await persistDbToIndexedDB();
 }
 
@@ -613,7 +675,15 @@ export async function saveToReaderLibrarySQLite(item: ReaderLibraryItem): Promis
  */
 export async function deleteFromReaderLibrarySQLite(id: string): Promise<void> {
   const db = await getSQLiteDB();
-  safeRun(db, 'DELETE FROM reader_library WHERE id = ?;', [id]);
+  db.run('PRAGMA foreign_keys = ON;');
+  db.run('BEGIN TRANSACTION;');
+  try {
+    safeRun(db, 'DELETE FROM reader_library WHERE id = ?;', [id]);
+    db.run('COMMIT;');
+  } catch (e) {
+    try { db.run('ROLLBACK;'); } catch {}
+    throw e;
+  }
   await persistDbToIndexedDB();
 }
 
@@ -646,20 +716,28 @@ export async function getReaderLibrarySQLite(): Promise<ReaderLibraryItem[]> {
  */
 export async function addBookmarkSQLite(bookmark: Bookmark): Promise<void> {
   const db = await getSQLiteDB();
-  safeRun(
-    db,
-    `INSERT OR REPLACE INTO reader_bookmarks (id, book_id, chapter_id, chapter_title, block_id, snippet, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?);`,
-    [
-      bookmark.id || '',
-      bookmark.bookId || '',
-      bookmark.chapterId || '',
-      bookmark.chapterTitle || '',
-      bookmark.blockId || '',
-      bookmark.snippet || '',
-      bookmark.createdAt || new Date().toISOString(),
-    ]
-  );
+  db.run('PRAGMA foreign_keys = ON;');
+  db.run('BEGIN TRANSACTION;');
+  try {
+    safeRun(
+      db,
+      `INSERT OR REPLACE INTO reader_bookmarks (id, book_id, chapter_id, chapter_title, block_id, snippet, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?);`,
+      [
+        bookmark.id || '',
+        bookmark.bookId || '',
+        bookmark.chapterId || '',
+        bookmark.chapterTitle || '',
+        bookmark.blockId || '',
+        bookmark.snippet || '',
+        bookmark.createdAt || new Date().toISOString(),
+      ]
+    );
+    db.run('COMMIT;');
+  } catch (e) {
+    try { db.run('ROLLBACK;'); } catch {}
+    throw e;
+  }
   await persistDbToIndexedDB();
 }
 
@@ -687,20 +765,28 @@ export async function getBookmarksSQLite(bookId: string): Promise<Bookmark[]> {
  */
 export async function addHighlightSQLite(highlight: HighlightNote): Promise<void> {
   const db = await getSQLiteDB();
-  safeRun(
-    db,
-    `INSERT OR REPLACE INTO reader_highlights (id, book_id, chapter_id, text, note, color, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?);`,
-    [
-      highlight.id || '',
-      highlight.bookId || '',
-      highlight.chapterId || '',
-      highlight.text || '',
-      highlight.note || '',
-      highlight.color || 'yellow',
-      highlight.createdAt || new Date().toISOString(),
-    ]
-  );
+  db.run('PRAGMA foreign_keys = ON;');
+  db.run('BEGIN TRANSACTION;');
+  try {
+    safeRun(
+      db,
+      `INSERT OR REPLACE INTO reader_highlights (id, book_id, chapter_id, text, note, color, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?);`,
+      [
+        highlight.id || '',
+        highlight.bookId || '',
+        highlight.chapterId || '',
+        highlight.text || '',
+        highlight.note || '',
+        highlight.color || 'yellow',
+        highlight.createdAt || new Date().toISOString(),
+      ]
+    );
+    db.run('COMMIT;');
+  } catch (e) {
+    try { db.run('ROLLBACK;'); } catch {}
+    throw e;
+  }
   await persistDbToIndexedDB();
 }
 
@@ -728,7 +814,15 @@ export async function getHighlightsSQLite(bookId: string): Promise<HighlightNote
  */
 export async function deleteHighlightSQLite(id: string): Promise<void> {
   const db = await getSQLiteDB();
-  safeRun(db, 'DELETE FROM reader_highlights WHERE id = ?;', [id]);
+  db.run('PRAGMA foreign_keys = ON;');
+  db.run('BEGIN TRANSACTION;');
+  try {
+    safeRun(db, 'DELETE FROM reader_highlights WHERE id = ?;', [id]);
+    db.run('COMMIT;');
+  } catch (e) {
+    try { db.run('ROLLBACK;'); } catch {}
+    throw e;
+  }
   await persistDbToIndexedDB();
 }
 
@@ -737,23 +831,31 @@ export async function deleteHighlightSQLite(id: string): Promise<void> {
  */
 export async function saveQuizAttemptSQLite(attempt: QuizAttempt): Promise<void> {
   const db = await getSQLiteDB();
-  safeRun(
-    db,
-    `INSERT OR REPLACE INTO reader_quiz_attempts (id, book_id, chapter_id, block_id, quiz_title, score, total_marks, percentage, answers_json, attempted_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
-    [
-      attempt.id || `${attempt.bookId}_${attempt.chapterId}_${attempt.blockId}`,
-      attempt.bookId || '',
-      attempt.chapterId || '',
-      attempt.blockId || '',
-      attempt.quizTitle || 'Practice Revision Quiz',
-      attempt.score || 0,
-      attempt.totalMarks || 0,
-      attempt.percentage || 0,
-      JSON.stringify(attempt.answers || {}),
-      attempt.attemptedAt || new Date().toISOString(),
-    ]
-  );
+  db.run('PRAGMA foreign_keys = ON;');
+  db.run('BEGIN TRANSACTION;');
+  try {
+    safeRun(
+      db,
+      `INSERT OR REPLACE INTO reader_quiz_attempts (id, book_id, chapter_id, block_id, quiz_title, score, total_marks, percentage, answers_json, attempted_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+      [
+        attempt.id || `${attempt.bookId}_${attempt.chapterId}_${attempt.blockId}`,
+        attempt.bookId || '',
+        attempt.chapterId || '',
+        attempt.blockId || '',
+        attempt.quizTitle || 'Practice Revision Quiz',
+        attempt.score || 0,
+        attempt.totalMarks || 0,
+        attempt.percentage || 0,
+        JSON.stringify(attempt.answers || {}),
+        attempt.attemptedAt || new Date().toISOString(),
+      ]
+    );
+    db.run('COMMIT;');
+  } catch (e) {
+    try { db.run('ROLLBACK;'); } catch {}
+    throw e;
+  }
   await persistDbToIndexedDB();
 }
 
@@ -793,6 +895,14 @@ export async function getQuizAttemptsSQLite(bookId: string): Promise<QuizAttempt
  */
 export async function deleteQuizAttemptsSQLite(bookId: string): Promise<void> {
   const db = await getSQLiteDB();
-  safeRun(db, 'DELETE FROM reader_quiz_attempts WHERE book_id = ?;', [bookId]);
+  db.run('PRAGMA foreign_keys = ON;');
+  db.run('BEGIN TRANSACTION;');
+  try {
+    safeRun(db, 'DELETE FROM reader_quiz_attempts WHERE book_id = ?;', [bookId]);
+    db.run('COMMIT;');
+  } catch (e) {
+    try { db.run('ROLLBACK;'); } catch {}
+    throw e;
+  }
   await persistDbToIndexedDB();
 }

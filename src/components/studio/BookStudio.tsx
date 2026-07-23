@@ -185,10 +185,18 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
     }
   };
 
-  const switchActiveTab = async (tab: 'content' | 'covers' | 'references' | 'publish' | 'marketing') => {
-    if (await flushSave()) {
-      setActiveTab(tab);
-    }
+  const switchActiveTab = (tab: 'content' | 'covers' | 'references' | 'publish' | 'marketing') => {
+    setActiveTab(tab);
+    void flushSave()
+      .then((saved) => {
+        if (!saved) {
+          setSaveStatus('Save failed');
+        }
+      })
+      .catch((error) => {
+        console.error('Background save failed during tab navigation:', error);
+        setSaveStatus('Save failed');
+      });
   };
 
   const switchActiveBook = async (book: Book) => {
@@ -840,8 +848,9 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
           <div className="bg-white border border-[#e0e0e0] rounded-xl p-2 flex flex-wrap items-center justify-between gap-2 shadow-sm">
             <div className="flex flex-wrap items-center gap-1 text-xs font-semibold">
               <button
+                type="button"
                 id="tab-content"
-                onClick={() => void switchActiveTab('content')}
+                onClick={() => switchActiveTab('content')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-md transition-all ${
                   activeTab === 'content'
                     ? 'bg-[#ff6321] text-white shadow-sm font-bold'
@@ -852,8 +861,9 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
               </button>
 
               <button
+                type="button"
                 id="tab-covers"
-                onClick={() => void switchActiveTab('covers')}
+                onClick={() => switchActiveTab('covers')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-md transition-all ${
                   activeTab === 'covers'
                     ? 'bg-[#ff6321] text-white shadow-sm font-bold'
@@ -864,8 +874,9 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
               </button>
 
               <button
+                type="button"
                 id="tab-references"
-                onClick={() => void switchActiveTab('references')}
+                onClick={() => switchActiveTab('references')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-md transition-all ${
                   activeTab === 'references'
                     ? 'bg-[#ff6321] text-white shadow-sm font-bold'
@@ -876,8 +887,9 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
               </button>
 
               <button
+                type="button"
                 id="tab-publish"
-                onClick={() => void switchActiveTab('publish')}
+                onClick={() => switchActiveTab('publish')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-md transition-all ${
                   activeTab === 'publish'
                     ? 'bg-[#ff6321] text-white shadow-sm font-bold'
@@ -888,8 +900,9 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
               </button>
 
               <button
+                type="button"
                 id="tab-marketing"
-                onClick={() => void switchActiveTab('marketing')}
+                onClick={() => switchActiveTab('marketing')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-md transition-all cursor-pointer ${
                   activeTab === 'marketing'
                     ? 'bg-orange-600 text-white shadow-sm font-bold'
@@ -1128,7 +1141,7 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
                     blocks={activeChapter.blocks}
                     onChangeBlocks={handleUpdateChapterBlocks}
                     references={activeBook.references}
-                    onAddReference={() => void switchActiveTab('references')}
+                    onAddReference={() => switchActiveTab('references')}
                   />
                 ) : (
                   <div className="p-8 text-center bg-[#1e2023] rounded-2xl border border-gray-800 text-gray-400">

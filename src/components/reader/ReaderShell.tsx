@@ -420,7 +420,7 @@ export const ReaderShell: React.FC<ReaderShellProps> = ({
     if (result.isValid) {
       try {
         // Extend book data pack expiration for 30 days without re-downloading
-        const { updatedJson, newExpiresAt } = renewBookDataPackJson(item.dataPackJson, 30);
+        const { updatedJson, newExpiresAt } = renewBookDataPackJson(item.dataPackJson, code, 30);
 
         const updatedItem: ReaderLibraryItem = {
           ...item,

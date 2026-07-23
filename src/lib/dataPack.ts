@@ -10,9 +10,13 @@ const READER_PHONE_KEY = 'publisher_pwa_reader_phone';
 export function getOrCreateDeviceId(): string {
   let deviceId = localStorage.getItem(DEVICE_ID_KEY);
   if (!deviceId) {
-    const randomHex = Math.random().toString(36).substring(2, 10).toUpperCase();
-    const ts = Date.now().toString(36).toUpperCase();
-    deviceId = `DEV-SHELL-${ts}-${randomHex}`;
+    try {
+      deviceId = crypto.randomUUID();
+    } catch {
+      const bytes = new Uint8Array(16);
+      crypto.getRandomValues(bytes);
+      deviceId = 'DEV-' + Array.from(bytes, b => b.toString(36).toUpperCase()).join('');
+    }
     localStorage.setItem(DEVICE_ID_KEY, deviceId);
   }
   return deviceId;
@@ -82,7 +86,7 @@ export async function downloadBookDataPackFile(pack: BookDataPack): Promise<void
   // Add data file inside zip
   zip.file(`${sanitizedTitle}_data.json`, jsonStr);
   zip.file('data.json', jsonStr); // Standard entry point
-  zip.file('READ_ME_OFFLINE.txt', `Empire Of Trust - My Library App Layer Data Pack\nBook: ${pack.book.title}\nBound Phone: ${pack.boundPhoneNumber}\nExpiry Date: ${new Date(pack.expiresAt || '').toLocaleDateString()}\n\nNote: This zipped data pack is encrypted and formatted strictly to open inside the My Library App layer.`);
+  zip.file('README.txt', `Empire Of Trust - My Library App Layer Data Pack\nBook: ${pack.book.title}\nBound Phone: ${pack.boundPhoneNumber}\nExpiry Date: ${new Date(pack.expiresAt || '').toLocaleDateString()}\n\nNote: This is a formatted Empire of Trust data package intended for import into the My Library App layer.`);
 
   // Generate ZIP blob
   const zipBlob = await zip.generateAsync({ type: 'blob' });
@@ -159,11 +163,71 @@ export function verifyAndExtractBookDataPack(
       };
     }
 
-    // 1. Expiration check (30 days from date of download)
+    if (!pack.appSignature || pack.appSignature !== 'EMPIRE_OF_TRUST_MY_LIBRARY_V2') {
+      return {
+        success: false,
+        message: 'Invalid application signature in data pack.',
+        book: pack.book,
+        pack,
+      };
+    }
+
+    if (!pack.packVersion) {
+      return {
+        success: false,
+        message: 'Invalid data pack version.',
+        book: pack.book,
+        pack,
+      };
+    }
+
+    const exportDate = new Date(pack.exportTimestamp);
+    if (isNaN(exportDate.getTime()) || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(pack.exportTimestamp)) {
+      return {
+        success: false,
+        message: 'Invalid export timestamp in data pack.',
+        book: pack.book,
+        pack,
+      };
+    }
+
+    if (pack.expiresAt) {
+      const expiryDateVal = new Date(pack.expiresAt);
+      if (isNaN(expiryDateVal.getTime()) || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(pack.expiresAt)) {
+        return {
+          success: false,
+          message: 'Invalid expiry date in data pack.',
+          book: pack.book,
+          pack,
+        };
+      }
+    }
+
     const now = new Date();
+    const exportTimestamp = exportDate.getTime();
+    if (exportTimestamp > now.getTime() + 60000) {
+      return {
+        success: false,
+        message: 'Impossible export timestamp detected in data pack.',
+        book: pack.book,
+        pack,
+      };
+    }
+
+    const recalculatedToken = calculateBindingToken(pack.book.id, pack.boundPhoneNumber, pack.boundDeviceId, pack.exportTimestamp);
+    if (recalculatedToken !== pack.securityHash) {
+      return {
+        success: false,
+        message: 'Tampered data pack detected: security token mismatch.',
+        book: pack.book,
+        pack,
+      };
+    }
+
+    // 1. Expiration check (30 days from date of download)
     const expiryTimestamp = pack.expiresAt 
       ? new Date(pack.expiresAt).getTime()
-      : new Date(pack.exportTimestamp).getTime() + (30 * 24 * 60 * 60 * 1000);
+      : exportTimestamp + (30 * 24 * 60 * 60 * 1000);
 
     const expiryDate = new Date(expiryTimestamp);
 
@@ -239,10 +303,14 @@ export function checkDataPackExpiration(dataPackJson: string, downloadedAt?: str
 /**
  * Renew / Extend a book data pack's expiration date in JSON without requiring re-downloading
  */
-export function renewBookDataPackJson(dataPackJson: string, extensionDays: number = 30): { updatedJson: string; newExpiresAt: string; book: Book } {
+export function renewBookDataPackJson(dataPackJson: string, authorization: string, extensionDays: number = 30): { updatedJson: string; newExpiresAt: string; book: Book } {
+  if (!authorization || !authorization.trim()) {
+    throw new Error('Renewal unavailable: publisher-authorized renewal token is required.');
+  }
+
   const now = new Date();
   const newExpiresAt = new Date(now.getTime() + extensionDays * 24 * 60 * 60 * 1000).toISOString();
-  
+
   let pack: BookDataPack;
   try {
     pack = JSON.parse(dataPackJson);

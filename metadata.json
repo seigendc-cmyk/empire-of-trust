@@ -1,0 +1,6 @@
+{
+  "name": "Empire Of Trust",
+  "description": "Complete book publishing studio with document formatting tools, offline PWA reader shell, and public book portal for Empire Of Trust.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

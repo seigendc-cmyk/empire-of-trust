@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover, user-scalable=no" />
+    <title>Empire Of Trust - Book Publisher & PWA Reader</title>
+    
+    <!-- PWA & Mobile Web App Meta Tags -->
+    <meta name="theme-color" content="#ff6321" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Empire Of Trust" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="application-name" content="Empire Of Trust" />
+    <meta name="description" content="Empire Of Trust - Professional Book Studio, Publisher & Offline PWA Reader" />
+
+    <!-- App Icons and Manifest -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.json" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+
+    <!-- Register Service Worker for Offline PWA Support -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').then((reg) => {
+            console.log('Empire Of Trust ServiceWorker registered:', reg.scope);
+          }).catch((err) => {
+            console.log('ServiceWorker registration failed:', err);
+          });
+        });
+      }
+    </script>
+  </body>
+</html>
+
+

@@ -1,0 +1,29 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Books collection - readable and writable by users/authors
+    match /books/{bookId} {
+      allow read, write: if true;
+
+      match /chapters/{chapterId} {
+        allow read, write: if true;
+      }
+
+      match /references/{refId} {
+        allow read, write: if true;
+      }
+    }
+
+    // User libraries collection
+    match /userLibraries/{userId} {
+      allow read, write: if true;
+    }
+    
+    // Default fallback
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
+

@@ -1,0 +1,74 @@
+{
+  "id": "/",
+  "name": "Empire Of Trust",
+  "short_name": "EmpireOfTrust",
+  "description": "Empire Of Trust - Professional Book Publishing Studio & Offline Reader Shell",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#2c2c2c",
+  "theme_color": "#ff6321",
+  "categories": ["books", "productivity", "utilities"],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Offline Mobile Reader",
+      "short_name": "Reader",
+      "description": "Open your local offline manuscript reader library",
+      "url": "/?view=reader",
+      "icons": [
+        {
+          "src": "/shortcut-reader.png",
+          "sizes": "96x96",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Book Studio",
+      "short_name": "Studio",
+      "description": "Create, edit and manage book publishing projects",
+      "url": "/?view=studio",
+      "icons": [
+        {
+          "src": "/shortcut-studio.png",
+          "sizes": "96x96",
+          "type": "image/png"
+        }
+      ]
+    }
+  ]
+}

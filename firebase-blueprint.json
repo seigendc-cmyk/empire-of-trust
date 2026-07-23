@@ -1,0 +1,26 @@
+{
+  "entities": {
+    "books": {
+      "title": "string",
+      "subtitle": "string",
+      "author": "string",
+      "publisherId": "string",
+      "publisherEmail": "string",
+      "description": "string",
+      "price": "number",
+      "isPublished": "boolean",
+      "publishedAt": "string",
+      "coverFront": "object",
+      "coverBack": "object",
+      "chaptersCount": "number",
+      "referencesCount": "number"
+    },
+    "userLibraries": {
+      "userId": "string",
+      "userEmail": "string",
+      "phoneNumber": "string",
+      "deviceId": "string",
+      "purchasedBooks": "array"
+    }
+  }
+}

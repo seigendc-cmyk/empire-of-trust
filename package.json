@@ -9,7 +9,10 @@
     "preview": "vite preview",
     "clean": "node -e \"const fs=require('fs');['dist','server.js'].forEach(p=>{try{fs.rmSync(p,{recursive:true,force:true})}catch{}})\"",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "check": "npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -44,5 +47,8 @@
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "vitest": "^4.1.10"
+  },
+  "engines": {
+    "node": ">=20.19.0"
   }
 }

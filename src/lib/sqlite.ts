@@ -8,6 +8,18 @@ const DB_KEY = 'main_sqlite_file';
 let dbInstance: Database | null = null;
 let initPromise: Promise<Database> | null = null;
 
+export interface DatabaseMigration {
+  version: number;
+  name: string;
+  up: (db: Database) => void;
+}
+
+export const DATABASE_SCHEMA_VERSION = 2;
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 /**
  * Initialize IndexedDB persistence helper
  */
@@ -84,75 +96,19 @@ export async function persistDbToIndexedDB(): Promise<void> {
 }
 
 /**
- * Helper to fetch WASM binary buffer from local or fallback CDN sources
+ * Ordered SQLite schema migrations.
+ *
+ * Version 1 represents the original schema before the metadata columns that
+ * were historically added through best-effort ALTER TABLE statements.
+ * Version 2 adds those columns explicitly while remaining compatible with
+ * databases where some or all columns already exist.
  */
-async function loadWasmBinary(): Promise<ArrayBuffer> {
-  const urls = [
-    '/sql-wasm.wasm?v=1.14.1',
-    'https://cdn.jsdelivr.net/npm/sql.js@1.14.1/dist/sql-wasm.wasm',
-    'https://cdn.jsdelivr.net/npm/sql.js@1.12.0/dist/sql-wasm.wasm',
-    'https://sql.js.org/dist/sql-wasm.wasm',
-  ];
-
-  for (const url of urls) {
-    try {
-      const response = await fetch(url, { cache: 'no-cache' });
-      if (response.ok) {
-        const buffer = await response.arrayBuffer();
-        if (buffer && buffer.byteLength >= 4) {
-          const header = new Uint8Array(buffer, 0, 4);
-          if (header[0] === 0x00 && header[1] === 0x61 && header[2] === 0x73 && header[3] === 0x6d) {
-            return buffer;
-          } else {
-            console.warn(`Response from ${url} is not a valid WebAssembly binary.`);
-          }
-        }
-      }
-    } catch (e) {
-      console.warn(`Failed to fetch WASM from ${url}:`, e);
-    }
-  }
-
-  throw new Error('Could not fetch valid sql-wasm.wasm from local or fallback CDN sources.');
-}
-
-/**
- * Initialize SQLite WASM engine & create tables if missing
- */
-export async function getSQLiteDB(): Promise<Database> {
-  if (dbInstance) return dbInstance;
-  if (initPromise) return initPromise;
-
-  initPromise = (async () => {
-    try {
-      let SQL;
-      try {
-        const wasmBuffer = await loadWasmBinary();
-        SQL = await initSqlJs({
-          wasmBinary: wasmBuffer,
-          locateFile: (file) => `https://cdn.jsdelivr.net/npm/sql.js@1.14.1/dist/${file}`,
-        });
-      } catch (wasmErr) {
-        console.warn('WASM ArrayBuffer fetch/compile strategy failed, trying CDN locateFile strategy:', wasmErr);
-        SQL = await initSqlJs({
-          locateFile: (file) => `https://cdn.jsdelivr.net/npm/sql.js@1.14.1/dist/${file}`,
-        });
-      }
-
-      const savedBytes = await loadDbFromIndexedDB();
-      if (savedBytes) {
-        try {
-          dbInstance = new SQL.Database(savedBytes);
-        } catch (dbErr) {
-          console.warn('Failed to parse saved SQLite bytes, creating fresh database instance:', dbErr);
-          dbInstance = new SQL.Database();
-        }
-      } else {
-        dbInstance = new SQL.Database();
-      }
-
-      dbInstance.run('PRAGMA foreign_keys = ON;');
-      dbInstance.run(`
+export const databaseMigrations: readonly DatabaseMigration[] = [
+  {
+    version: 1,
+    name: 'create_baseline_schema',
+    up: (db) => {
+      db.run(`
         CREATE TABLE IF NOT EXISTS local_books (
           id TEXT PRIMARY KEY,
           title TEXT NOT NULL,
@@ -160,23 +116,6 @@ export async function getSQLiteDB(): Promise<Database> {
           author TEXT NOT NULL,
           publisher_id TEXT,
           description TEXT,
-          category TEXT DEFAULT 'General',
-          genre TEXT,
-          sub_genre TEXT,
-          tags_json TEXT,
-          target_audience TEXT,
-          language TEXT,
-          author_details_json TEXT,
-          contributors_json TEXT,
-          numbering_config_json TEXT,
-          front_matter_json TEXT,
-          series_config_json TEXT,
-          characters_json TEXT,
-          assets_json TEXT,
-          is_archived INTEGER DEFAULT 0,
-          archived_at TEXT,
-          whatsapp_number TEXT,
-          access_codes_json TEXT,
           price REAL DEFAULT 0,
           currency TEXT DEFAULT 'USD',
           cover_front_json TEXT,
@@ -267,24 +206,162 @@ export async function getSQLiteDB(): Promise<Database> {
           attempted_at TEXT
         );
       `);
+    },
+  },
+  {
+    version: 2,
+    name: 'add_local_book_metadata',
+    up: (db) => {
+      const existingColumns = new Set(
+        (db.exec('PRAGMA table_info(local_books);')[0]?.values ?? []).map((row) => String(row[1]))
+      );
+      const additions: ReadonlyArray<readonly [string, string]> = [
+        ['category', "TEXT DEFAULT 'General'"],
+        ['genre', 'TEXT'],
+        ['sub_genre', 'TEXT'],
+        ['tags_json', 'TEXT'],
+        ['target_audience', 'TEXT'],
+        ['language', 'TEXT'],
+        ['author_details_json', 'TEXT'],
+        ['contributors_json', 'TEXT'],
+        ['numbering_config_json', 'TEXT'],
+        ['front_matter_json', 'TEXT'],
+        ['series_config_json', 'TEXT'],
+        ['characters_json', 'TEXT'],
+        ['assets_json', 'TEXT'],
+        ['is_archived', 'INTEGER DEFAULT 0'],
+        ['archived_at', 'TEXT'],
+        ['whatsapp_number', 'TEXT'],
+        ['access_codes_json', 'TEXT'],
+      ];
 
-      try { dbInstance.run("ALTER TABLE local_books ADD COLUMN category TEXT DEFAULT 'General';"); } catch(e) {}
-      try { dbInstance.run("ALTER TABLE local_books ADD COLUMN genre TEXT;"); } catch(e) {}
-      try { dbInstance.run("ALTER TABLE local_books ADD COLUMN sub_genre TEXT;"); } catch(e) {}
-      try { dbInstance.run("ALTER TABLE local_books ADD COLUMN tags_json TEXT;"); } catch(e) {}
-      try { dbInstance.run("ALTER TABLE local_books ADD COLUMN target_audience TEXT;"); } catch(e) {}
-      try { dbInstance.run("ALTER TABLE local_books ADD COLUMN language TEXT;"); } catch(e) {}
-      try { dbInstance.run("ALTER TABLE local_books ADD COLUMN author_details_json TEXT;"); } catch(e) {}
-      try { dbInstance.run("ALTER TABLE local_books ADD COLUMN contributors_json TEXT;"); } catch(e) {}
-      try { dbInstance.run("ALTER TABLE local_books ADD COLUMN numbering_config_json TEXT;"); } catch(e) {}
-      try { dbInstance.run("ALTER TABLE local_books ADD COLUMN front_matter_json TEXT;"); } catch(e) {}
-      try { dbInstance.run("ALTER TABLE local_books ADD COLUMN series_config_json TEXT;"); } catch(e) {}
-      try { dbInstance.run("ALTER TABLE local_books ADD COLUMN characters_json TEXT;"); } catch(e) {}
-      try { dbInstance.run("ALTER TABLE local_books ADD COLUMN assets_json TEXT;"); } catch(e) {}
-      try { dbInstance.run("ALTER TABLE local_books ADD COLUMN is_archived INTEGER DEFAULT 0;"); } catch(e) {}
-      try { dbInstance.run("ALTER TABLE local_books ADD COLUMN archived_at TEXT;"); } catch(e) {}
-      try { dbInstance.run("ALTER TABLE local_books ADD COLUMN whatsapp_number TEXT;"); } catch(e) {}
-      try { dbInstance.run("ALTER TABLE local_books ADD COLUMN access_codes_json TEXT;"); } catch(e) {}
+      for (const [column, definition] of additions) {
+        if (!existingColumns.has(column)) {
+          db.run(`ALTER TABLE local_books ADD COLUMN ${column} ${definition};`);
+        }
+      }
+    },
+  },
+];
+
+export function getDatabaseUserVersion(db: Database): number {
+  return Number(db.exec('PRAGMA user_version;')[0]?.values[0]?.[0] ?? 0);
+}
+
+export function applyDatabaseMigrations(
+  db: Database,
+  migrations: readonly DatabaseMigration[] = databaseMigrations
+): void {
+  const orderedMigrations = [...migrations].sort((left, right) => left.version - right.version);
+  const versions = new Set<number>();
+
+  for (const migration of orderedMigrations) {
+    if (!Number.isInteger(migration.version) || migration.version <= 0 || versions.has(migration.version)) {
+      throw new Error(`Invalid database migration version: ${migration.version}`);
+    }
+    versions.add(migration.version);
+  }
+
+  let currentVersion = getDatabaseUserVersion(db);
+  for (const migration of orderedMigrations) {
+    if (migration.version <= currentVersion) continue;
+
+    let transactionStarted = false;
+    try {
+      db.run('BEGIN TRANSACTION;');
+      transactionStarted = true;
+      migration.up(db);
+      db.run(`PRAGMA user_version = ${migration.version};`);
+      db.run('COMMIT;');
+      transactionStarted = false;
+      currentVersion = migration.version;
+    } catch (error) {
+      let rollbackDetails = '';
+      if (transactionStarted) {
+        try {
+          db.run('ROLLBACK;');
+        } catch (rollbackError) {
+          rollbackDetails = ` Rollback also failed: ${errorMessage(rollbackError)}.`;
+        }
+      }
+      throw new Error(
+        `Database migration ${migration.version} (${migration.name}) failed: ${errorMessage(error)}.${rollbackDetails}`,
+        { cause: error }
+      );
+    }
+  }
+}
+
+/**
+ * Helper to fetch WASM binary buffer from local or fallback CDN sources
+ */
+async function loadWasmBinary(): Promise<ArrayBuffer> {
+  const urls = [
+    '/sql-wasm.wasm?v=1.14.1',
+    'https://cdn.jsdelivr.net/npm/sql.js@1.14.1/dist/sql-wasm.wasm',
+    'https://cdn.jsdelivr.net/npm/sql.js@1.12.0/dist/sql-wasm.wasm',
+    'https://sql.js.org/dist/sql-wasm.wasm',
+  ];
+
+  for (const url of urls) {
+    try {
+      const response = await fetch(url, { cache: 'no-cache' });
+      if (response.ok) {
+        const buffer = await response.arrayBuffer();
+        if (buffer && buffer.byteLength >= 4) {
+          const header = new Uint8Array(buffer, 0, 4);
+          if (header[0] === 0x00 && header[1] === 0x61 && header[2] === 0x73 && header[3] === 0x6d) {
+            return buffer;
+          } else {
+            console.warn(`Response from ${url} is not a valid WebAssembly binary.`);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(`Failed to fetch WASM from ${url}:`, e);
+    }
+  }
+
+  throw new Error('Could not fetch valid sql-wasm.wasm from local or fallback CDN sources.');
+}
+
+/**
+ * Initialize SQLite WASM engine & create tables if missing
+ */
+export async function getSQLiteDB(): Promise<Database> {
+  if (dbInstance) return dbInstance;
+  if (initPromise) return initPromise;
+
+  initPromise = (async () => {
+    try {
+      let SQL;
+      try {
+        const wasmBuffer = await loadWasmBinary();
+        SQL = await initSqlJs({
+          wasmBinary: wasmBuffer,
+          locateFile: (file) => `https://cdn.jsdelivr.net/npm/sql.js@1.14.1/dist/${file}`,
+        });
+      } catch (wasmErr) {
+        console.warn('WASM ArrayBuffer fetch/compile strategy failed, trying CDN locateFile strategy:', wasmErr);
+        SQL = await initSqlJs({
+          locateFile: (file) => `https://cdn.jsdelivr.net/npm/sql.js@1.14.1/dist/${file}`,
+        });
+      }
+
+      const savedBytes = await loadDbFromIndexedDB();
+      if (savedBytes) {
+        try {
+          dbInstance = new SQL.Database(savedBytes);
+        } catch (dbErr) {
+          console.warn('Failed to parse saved SQLite bytes, creating fresh database instance:', dbErr);
+          dbInstance = new SQL.Database();
+        }
+      } else {
+        dbInstance = new SQL.Database();
+      }
+
+      dbInstance.run('PRAGMA foreign_keys = ON;');
+      applyDatabaseMigrations(dbInstance);
 
       await persistDbToIndexedDB();
       return dbInstance;

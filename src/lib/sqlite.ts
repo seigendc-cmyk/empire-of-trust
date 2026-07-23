@@ -1,17 +1,59 @@
 import initSqlJs, { Database } from 'sql.js';
+import JSZip from 'jszip';
 import { Book, Chapter, ContentBlock, ReferenceItem, ReaderLibraryItem, Bookmark, HighlightNote, QuizAttempt } from '../types';
 
 const INDEXEDDB_NAME = 'BookPublisher_SQLite_DB';
 const STORE_NAME = 'sqlite_bytes';
 const DB_KEY = 'main_sqlite_file';
+const DB_RECOVERY_KEY = 'corrupted_sqlite_recovery';
+const EMERGENCY_BACKUP_KEY = 'emergency_backup_before_restore';
+
+export const SQLITE_BACKUP_PRODUCT_NAME = 'empire-of-trust';
+export const SQLITE_BACKUP_FORMAT_VERSION = '1.0.0';
+export const SQLITE_APPLICATION_VERSION = '0.1.0-alpha.1';
+export const SQLITE_STORAGE_KEYS = {
+  database: DB_KEY,
+  corruptionRecovery: DB_RECOVERY_KEY,
+  emergencyBackup: EMERGENCY_BACKUP_KEY,
+} as const;
 
 let dbInstance: Database | null = null;
 let initPromise: Promise<Database> | null = null;
+let databaseStartupStatus: DatabaseStartupStatus = 'loaded';
 
 export interface DatabaseMigration {
   version: number;
   name: string;
   up: (db: Database) => void;
+}
+
+export type DatabaseStartupStatus =
+  | 'loaded'
+  | 'created'
+  | 'recovered'
+  | 'corrupted'
+  | 'restore-required';
+
+export interface LocalDatabaseBackupManifest {
+  productName: string;
+  backupFormatVersion: string;
+  applicationVersion: string;
+  createdAt: string;
+  databaseByteLength: number;
+  sha256Checksum: string;
+}
+
+export interface LocalDatabaseBackupValidation {
+  valid: boolean;
+  manifest?: LocalDatabaseBackupManifest;
+  databaseBytes?: Uint8Array;
+  error?: string;
+}
+
+export interface LocalDatabaseRestoreResult {
+  success: boolean;
+  requiresReload: boolean;
+  message: string;
 }
 
 export const DATABASE_SCHEMA_VERSION = 2;
@@ -41,19 +83,25 @@ function openIndexedDB(): Promise<IDBDatabase> {
  * Load SQLite DB bytes from IndexedDB
  */
 async function loadDbFromIndexedDB(): Promise<Uint8Array | null> {
-  try {
-    const idb = await openIndexedDB();
-    return new Promise((resolve, reject) => {
-      const tx = idb.transaction(STORE_NAME, 'readonly');
-      const store = tx.objectStore(STORE_NAME);
-      const req = store.get(DB_KEY);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => reject(req.error);
-    });
-  } catch (err) {
-    console.warn('IndexedDB read warning:', err);
-    return null;
-  }
+  const idb = await openIndexedDB();
+  return new Promise((resolve, reject) => {
+    const tx = idb.transaction(STORE_NAME, 'readonly');
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.get(DB_KEY);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function saveBytesToIndexedDB(key: string, bytes: Uint8Array): Promise<void> {
+  const idb = await openIndexedDB();
+  await new Promise<void>((resolve, reject) => {
+    const tx = idb.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.put(bytes, key);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
 }
 
 /**
@@ -71,15 +119,7 @@ export async function persistDbToIndexedDB(): Promise<void> {
   const task = async (): Promise<void> => {
     if (mySeq !== persistSeq || !dbInstance) return;
 
-    const data = dbInstance.export();
-    const idb = await openIndexedDB();
-    await new Promise<void>((resolve, reject) => {
-      const tx = idb.transaction(STORE_NAME, 'readwrite');
-      const store = tx.objectStore(STORE_NAME);
-      const req = store.put(data, DB_KEY);
-      req.onsuccess = () => resolve();
-      req.onerror = () => reject(req.error);
-    });
+    await saveBytesToIndexedDB(DB_KEY, dbInstance.export());
   };
 
   lastPersist = (async () => {
@@ -93,6 +133,28 @@ export async function persistDbToIndexedDB(): Promise<void> {
   })();
 
   return lastPersist;
+}
+
+export function getDatabaseStartupStatus(): DatabaseStartupStatus {
+  return databaseStartupStatus;
+}
+
+export function setSQLiteDatabaseForTesting(
+  db: Database | null,
+  status: DatabaseStartupStatus = db ? 'loaded' : 'created'
+): void {
+  if (dbInstance && dbInstance !== db) {
+    try {
+      dbInstance.close();
+    } catch (error) {
+      console.warn('Failed to close SQLite test database:', error);
+    }
+  }
+  dbInstance = db;
+  initPromise = db ? Promise.resolve(db) : null;
+  databaseStartupStatus = status;
+  persistSeq = 0;
+  lastPersist = Promise.resolve();
 }
 
 /**
@@ -325,6 +387,21 @@ async function loadWasmBinary(): Promise<ArrayBuffer> {
   throw new Error('Could not fetch valid sql-wasm.wasm from local or fallback CDN sources.');
 }
 
+async function initializeSqlJs() {
+  try {
+    const wasmBuffer = await loadWasmBinary();
+    return await initSqlJs({
+      wasmBinary: wasmBuffer,
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/sql.js@1.14.1/dist/${file}`,
+    });
+  } catch (wasmError) {
+    console.warn('WASM ArrayBuffer fetch/compile strategy failed, trying CDN locateFile strategy:', wasmError);
+    return initSqlJs({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/sql.js@1.14.1/dist/${file}`,
+    });
+  }
+}
+
 /**
  * Initialize SQLite WASM engine & create tables if missing
  */
@@ -333,39 +410,56 @@ export async function getSQLiteDB(): Promise<Database> {
   if (initPromise) return initPromise;
 
   initPromise = (async () => {
+    let initializedDatabase: Database | null = null;
     try {
-      let SQL;
-      try {
-        const wasmBuffer = await loadWasmBinary();
-        SQL = await initSqlJs({
-          wasmBinary: wasmBuffer,
-          locateFile: (file) => `https://cdn.jsdelivr.net/npm/sql.js@1.14.1/dist/${file}`,
-        });
-      } catch (wasmErr) {
-        console.warn('WASM ArrayBuffer fetch/compile strategy failed, trying CDN locateFile strategy:', wasmErr);
-        SQL = await initSqlJs({
-          locateFile: (file) => `https://cdn.jsdelivr.net/npm/sql.js@1.14.1/dist/${file}`,
-        });
-      }
+      const SQL = await initializeSqlJs();
 
       const savedBytes = await loadDbFromIndexedDB();
+      let recoveredCorruptBytes = false;
       if (savedBytes) {
         try {
-          dbInstance = new SQL.Database(savedBytes);
-        } catch (dbErr) {
-          console.warn('Failed to parse saved SQLite bytes, creating fresh database instance:', dbErr);
-          dbInstance = new SQL.Database();
+          initializedDatabase = new SQL.Database(savedBytes);
+          initializedDatabase.exec('PRAGMA schema_version;');
+          databaseStartupStatus = 'loaded';
+        } catch (databaseError) {
+          databaseStartupStatus = 'corrupted';
+          if (initializedDatabase) {
+            try {
+              initializedDatabase.close();
+            } catch (closeError) {
+              console.warn('Failed to close corrupt SQLite database handle:', closeError);
+            }
+          }
+          initializedDatabase = null;
+          await saveBytesToIndexedDB(DB_RECOVERY_KEY, savedBytes);
+          console.warn('Saved corrupt SQLite bytes for recovery before creating a replacement:', databaseError);
+          initializedDatabase = new SQL.Database();
+          recoveredCorruptBytes = true;
         }
       } else {
-        dbInstance = new SQL.Database();
+        initializedDatabase = new SQL.Database();
+        databaseStartupStatus = 'created';
       }
 
-      dbInstance.run('PRAGMA foreign_keys = ON;');
-      applyDatabaseMigrations(dbInstance);
+      initializedDatabase.run('PRAGMA foreign_keys = ON;');
+      applyDatabaseMigrations(initializedDatabase);
 
+      dbInstance = initializedDatabase;
       await persistDbToIndexedDB();
+      if (recoveredCorruptBytes) {
+        databaseStartupStatus = 'recovered';
+      }
       return dbInstance;
     } catch (error) {
+      if (initializedDatabase) {
+        try {
+          initializedDatabase.close();
+        } catch (closeError) {
+          console.warn('Failed to close SQLite database after initialization error:', closeError);
+        }
+      }
+      dbInstance = null;
+      initPromise = null;
       console.error('Failed to initialize SQLite WASM engine:', error);
       throw error;
     }
@@ -982,4 +1076,185 @@ export async function deleteQuizAttemptsSQLite(bookId: string): Promise<void> {
     throw e;
   }
   await persistDbToIndexedDB();
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+}
+
+export async function computeDatabaseSha256(bytes: Uint8Array): Promise<string> {
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', toArrayBuffer(bytes));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function isBackupManifest(value: unknown): value is LocalDatabaseBackupManifest {
+  if (!value || typeof value !== 'object') return false;
+  const manifest = value as Record<string, unknown>;
+  return (
+    typeof manifest.productName === 'string' &&
+    typeof manifest.backupFormatVersion === 'string' &&
+    typeof manifest.applicationVersion === 'string' &&
+    manifest.applicationVersion.length > 0 &&
+    typeof manifest.createdAt === 'string' &&
+    !Number.isNaN(Date.parse(manifest.createdAt)) &&
+    Number.isInteger(manifest.databaseByteLength) &&
+    (manifest.databaseByteLength as number) >= 0 &&
+    typeof manifest.sha256Checksum === 'string' &&
+    /^[a-f0-9]{64}$/i.test(manifest.sha256Checksum)
+  );
+}
+
+export async function createLocalDatabaseBackup(
+  databaseBytes: Uint8Array,
+  applicationVersion = SQLITE_APPLICATION_VERSION
+): Promise<Blob> {
+  const manifest: LocalDatabaseBackupManifest = {
+    productName: SQLITE_BACKUP_PRODUCT_NAME,
+    backupFormatVersion: SQLITE_BACKUP_FORMAT_VERSION,
+    applicationVersion,
+    createdAt: new Date().toISOString(),
+    databaseByteLength: databaseBytes.byteLength,
+    sha256Checksum: await computeDatabaseSha256(databaseBytes),
+  };
+
+  const zip = new JSZip();
+  zip.file('manifest.json', JSON.stringify(manifest, null, 2));
+  zip.file('database.sqlite', databaseBytes);
+  return zip.generateAsync({ type: 'blob' });
+}
+
+export async function exportLocalDatabaseBackup(): Promise<Blob> {
+  const db = await getSQLiteDB();
+  return createLocalDatabaseBackup(db.export());
+}
+
+export async function downloadLocalDatabaseBackup(): Promise<void> {
+  const backup = await exportLocalDatabaseBackup();
+  const url = URL.createObjectURL(backup);
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `empire-of-trust-sqlite-backup-${timestamp}.zip`;
+  document.body.appendChild(link);
+  try {
+    link.click();
+  } finally {
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+}
+
+export async function validateLocalDatabaseBackup(
+  backup: Blob
+): Promise<LocalDatabaseBackupValidation> {
+  try {
+    const zip = await JSZip.loadAsync(backup);
+    const manifestFile = zip.file('manifest.json');
+    const databaseFile = zip.file('database.sqlite');
+    if (!manifestFile || !databaseFile) {
+      return { valid: false, error: 'Invalid backup: manifest.json and database.sqlite are required.' };
+    }
+
+    let parsedManifest: unknown;
+    try {
+      parsedManifest = JSON.parse(await manifestFile.async('string'));
+    } catch {
+      return { valid: false, error: 'Invalid backup: manifest.json is malformed.' };
+    }
+
+    if (!isBackupManifest(parsedManifest)) {
+      return { valid: false, error: 'Invalid backup: manifest fields are malformed.' };
+    }
+    const manifest = parsedManifest;
+    if (manifest.productName !== SQLITE_BACKUP_PRODUCT_NAME) {
+      return { valid: false, error: 'Invalid backup: productName does not match this application.' };
+    }
+    if (manifest.backupFormatVersion !== SQLITE_BACKUP_FORMAT_VERSION) {
+      return { valid: false, error: 'Invalid backup: backupFormatVersion is not supported.' };
+    }
+
+    const databaseBytes = await databaseFile.async('uint8array');
+    if (databaseBytes.byteLength !== manifest.databaseByteLength) {
+      return { valid: false, error: 'Invalid backup: database byte length does not match the manifest.' };
+    }
+
+    const checksum = await computeDatabaseSha256(databaseBytes);
+    if (checksum.toLowerCase() !== manifest.sha256Checksum.toLowerCase()) {
+      return { valid: false, error: 'Invalid backup: SHA-256 checksum does not match the manifest.' };
+    }
+
+    return { valid: true, manifest, databaseBytes };
+  } catch (error) {
+    return { valid: false, error: `Invalid backup ZIP: ${errorMessage(error)}` };
+  }
+}
+
+export async function restoreLocalDatabaseBackup(
+  backup: Blob
+): Promise<LocalDatabaseRestoreResult> {
+  const validation = await validateLocalDatabaseBackup(backup);
+  if (!validation.valid || !validation.databaseBytes) {
+    return {
+      success: false,
+      requiresReload: false,
+      message: validation.error ?? 'The SQLite backup is invalid.',
+    };
+  }
+
+  let candidateDatabase: Database | null = null;
+  try {
+    const SQL = await initializeSqlJs();
+    candidateDatabase = new SQL.Database(validation.databaseBytes);
+    candidateDatabase.exec('PRAGMA schema_version;');
+    candidateDatabase.run('PRAGMA foreign_keys = ON;');
+    applyDatabaseMigrations(candidateDatabase);
+    const restoredBytes = candidateDatabase.export();
+
+    const currentDatabase = dbInstance ?? await getSQLiteDB();
+    const currentBytes = currentDatabase.export();
+
+    persistSeq += 1;
+    try {
+      await lastPersist;
+    } catch (persistenceError) {
+      console.warn('Previous SQLite persistence failed before restore:', persistenceError);
+    }
+
+    await saveBytesToIndexedDB(EMERGENCY_BACKUP_KEY, currentBytes);
+    await saveBytesToIndexedDB(DB_KEY, restoredBytes);
+
+    const previousDatabase = dbInstance;
+    dbInstance = candidateDatabase;
+    candidateDatabase = null;
+    initPromise = Promise.resolve(dbInstance);
+    lastPersist = Promise.resolve();
+    databaseStartupStatus = 'restore-required';
+
+    if (previousDatabase && previousDatabase !== dbInstance) {
+      try {
+        previousDatabase.close();
+      } catch (closeError) {
+        console.warn('Failed to close the previous SQLite database after restore:', closeError);
+      }
+    }
+
+    return {
+      success: true,
+      requiresReload: true,
+      message: 'SQLite database restored successfully. Reload the application to use the restored data.',
+    };
+  } catch (error) {
+    if (candidateDatabase) {
+      try {
+        candidateDatabase.close();
+      } catch (closeError) {
+        console.warn('Failed to close invalid restored SQLite database:', closeError);
+      }
+    }
+    return {
+      success: false,
+      requiresReload: false,
+      message: `SQLite restore failed: ${errorMessage(error)}`,
+    };
+  }
 }

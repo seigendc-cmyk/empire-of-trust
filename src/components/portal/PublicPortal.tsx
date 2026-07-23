@@ -5,9 +5,9 @@ import {
   Copy, ExternalLink, Check, Key, Archive, Filter, Store
 } from 'lucide-react';
 import { Book, ReaderProfile, BookDataPack, DEFAULT_BOOK_CATEGORIES, VendorProfile } from '../../types';
-import { fetchPublishedBooksFromFirestore, saveUserLibraryToFirestore } from '../../lib/firebase';
+import { fetchPublishedBooksFromFirestore } from '../../lib/firebase';
 import { getAllLocalBooks } from '../../lib/sqlite';
-import { getOrCreateDeviceId, savePhoneNumber, getSavedPhoneNumber, createBookDataPack, downloadBookDataPackFile } from '../../lib/dataPack';
+import { getOrCreateDeviceId, savePhoneNumber, getSavedPhoneNumber } from '../../lib/dataPack';
 import { formatWhatsAppPopUrl, verifyAccessCode } from '../../lib/accessCodes';
 import { VendorTimedSlidesCard } from './VendorTimedSlidesCard';
 import { VendorStorefrontModal } from './VendorStorefrontModal';
@@ -172,23 +172,8 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
 
     setIsGeneratingPack(true);
     savePhoneNumber(readerPhone);
-
-    try {
-      const pack = createBookDataPack(selectedBook, readerPhone, deviceId);
-      
-      // Sync to Firestore library if user is logged in
-      if (user) {
-        await saveUserLibraryToFirestore(user.uid, selectedBook.id, readerPhone, deviceId);
-      }
-
-      // Trigger download of zipped .datapack.zip file
-      await downloadBookDataPackFile(pack);
-      setDownloadSuccess(pack);
-    } catch (err: any) {
-      alert('Failed to generate pack: ' + err.message);
-    } finally {
-      setIsGeneratingPack(false);
-    }
+    alert('Signed v3.0.0 packages must be issued by the publisher signing service. Browser-side package generation is disabled because the private signing key must remain outside the frontend.');
+    setIsGeneratingPack(false);
   };
 
   return (

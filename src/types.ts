@@ -434,6 +434,38 @@ export interface RenewalAuthorization {
   extensionDays: number;
 }
 
+export type LicenceBindingMode = 'phone' | 'device' | 'phone-and-device';
+export type DataPackSignatureAlgorithm = 'ECDSA-P256-SHA256';
+
+export interface SignatureMetadata {
+  algorithm: DataPackSignatureAlgorithm;
+  keyId: string;
+  signature: string;
+}
+
+export interface SignedBookManifest {
+  packVersion: '3.0.0';
+  appSignature: 'EMPIRE_OF_TRUST_MY_LIBRARY_V3';
+  packageId: string;
+  bookId: string;
+  bookVersion: string;
+  issuedAt: string;
+  expiresAt: string;
+  bindingMode: LicenceBindingMode;
+  boundPhoneHash?: string;
+  boundDeviceHash?: string;
+  contentHash: string;
+  licenceId: string;
+  issuer: string;
+  signatureAlgorithm: DataPackSignatureAlgorithm;
+}
+
+export interface SignedBookDataPack {
+  manifest: SignedBookManifest;
+  signature: SignatureMetadata;
+  book: Book;
+}
+
 export interface SqlQueryResult {
   columns: string[];
   values: any[][];

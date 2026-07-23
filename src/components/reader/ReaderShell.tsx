@@ -6,8 +6,9 @@ import {
 } from 'lucide-react';
 import { Book, ReaderProfile, ReaderLibraryItem, DEFAULT_BOOK_CATEGORIES, RenewalAuthorization } from '../../types';
 import { getReaderLibrarySQLite, saveToReaderLibrarySQLite, saveBookToSQLite, getAllLocalBooks, deleteFromReaderLibrarySQLite } from '../../lib/sqlite';
-import { getOrCreateDeviceId, getSavedPhoneNumber, verifyAndExtractBookDataPack, extractDataPackFromFile, savePhoneNumber, checkDataPackExpiration, renewBookDataPackJson, createBookDataPack, downloadBookDataPackFile } from '../../lib/dataPack';
+import { getOrCreateDeviceId, getSavedPhoneNumber, extractDataPackFromFile, savePhoneNumber, checkDataPackExpiration, renewBookDataPackJson, verifyImportedBookDataPack } from '../../lib/dataPack';
 import { verifyAccessCode, formatWhatsAppPopUrl } from '../../lib/accessCodes';
+import { DATA_PACK_PUBLIC_KEYS } from '@/config/keys';
 import { fetchPublishedBooksFromFirestore } from '../../lib/firebase';
 import { ReaderView } from './ReaderView';
 
@@ -158,51 +159,11 @@ export const ReaderShell: React.FC<ReaderShellProps> = ({
       }
     }
 
-    try {
-      setDownloadStatus({
-        success: true,
-        message: '⚡ Packaging manuscript and installing directly into local shell database...',
-      });
-
-      // Build JSON Data Pack bound to reader phone & device
-      const pack = createBookDataPack(book, phone, deviceId);
-      const jsonString = JSON.stringify(pack);
-
-      // Save manuscript and library item into SQLite
-      await saveBookToSQLite(book);
-
-      const libItem: ReaderLibraryItem = {
-        id: 'lib_' + book.id + '_' + Date.now().toString(36),
-        bookId: book.id,
-        bookTitle: book.title,
-        author: book.author,
-        coverFront: book.coverFront,
-        boundPhoneNumber: phone,
-        boundDeviceId: deviceId,
-        downloadedAt: new Date().toISOString(),
-        isUnlocked: true,
-        dataPackJson: jsonString,
-      };
-
-      await saveToReaderLibrarySQLite(libItem);
-      await loadLibraryFromSQLite();
-
-      // Optionally trigger zip backup file download
-      if (alsoSaveZipBackup) {
-        await downloadBookDataPackFile(pack);
-      }
-
-      setDownloadStatus({
-        success: true,
-        message: `🎉 Success! "${book.title}" has been downloaded straight into your offline shell library! You can now read it offline anytime.`,
-      });
-
-    } catch (err: any) {
-      setDownloadStatus({
-        success: false,
-        message: `Direct download failed: ${err.message || err}`,
-      });
-    }
+    void alsoSaveZipBackup;
+    setDownloadStatus({
+      success: false,
+      message: `"${book.title}" requires a publisher-issued signed v3.0.0 data pack. Import that pack after it is issued; this browser cannot hold the private signing key.`,
+    });
   };
 
   // Copy Protection Banner Toast
@@ -323,13 +284,23 @@ export const ReaderShell: React.FC<ReaderShellProps> = ({
     setImportStatus(null);
     savePhoneNumber(readerPhone);
 
-    const verification = verifyAndExtractBookDataPack(jsonString, readerPhone, deviceId);
+    const verification = await verifyImportedBookDataPack(
+      jsonString,
+      readerPhone,
+      deviceId,
+      DATA_PACK_PUBLIC_KEYS,
+    );
 
     if (verification.success && verification.book) {
       const b = verification.book;
 
-      // Save book structure & library entry into SQLite
       await saveBookToSQLite(b);
+
+      const legacyPack = verification.pack && 'boundPhoneNumber' in verification.pack
+        ? verification.pack
+        : undefined;
+      const boundPhone = legacyPack?.boundPhoneNumber || readerPhone;
+      const boundDevice = legacyPack?.boundDeviceId || deviceId;
 
       const libItem: ReaderLibraryItem = {
         id: 'lib_' + b.id + '_' + Date.now().toString(36),
@@ -337,8 +308,8 @@ export const ReaderShell: React.FC<ReaderShellProps> = ({
         bookTitle: b.title,
         author: b.author,
         coverFront: b.coverFront,
-        boundPhoneNumber: verification.pack?.boundPhoneNumber || readerPhone,
-        boundDeviceId: verification.pack?.boundDeviceId || deviceId,
+        boundPhoneNumber: boundPhone,
+        boundDeviceId: boundDevice,
         downloadedAt: new Date().toISOString(),
         isUnlocked: true,
         dataPackJson: jsonString,

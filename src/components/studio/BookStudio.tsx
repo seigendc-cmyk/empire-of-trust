@@ -20,7 +20,6 @@ import { ActivationDashboard } from './ActivationDashboard';
 import { VendorMarketingStudio } from './VendorMarketingStudio';
 import { saveBookToSQLite, deleteBookFromSQLite, getAllLocalBooks } from '../../lib/sqlite';
 import { publishBookToFirestore, fetchPublishedBooksFromFirestore } from '../../lib/firebase';
-import { createBookDataPack, downloadBookDataPackFile, getOrCreateDeviceId } from '../../lib/dataPack';
 import { generateRandomPopCode, formatPublisherReplyMessage, cleanPhoneNumber } from '../../lib/accessCodes';
 import { exportBookToPDF } from '../../lib/pdfExporter';
 import { DebouncedSaveQueue } from '../../lib/debouncedSave';
@@ -554,10 +553,7 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
   const handleExportDataPack = async () => {
     if (!activeBook) return;
     if (!(await flushSave())) return;
-    const deviceId = getOrCreateDeviceId();
-    const phone = user?.phoneNumber || readerPhoneForActivation || '';
-    const pack = createBookDataPack(activeBook, phone, deviceId);
-    await downloadBookDataPackFile(pack);
+    alert('Signed v3.0.0 data packs must be issued by the external publisher signing workflow. Browser export is disabled because the private signing key must never be shipped to the frontend.');
   };
 
   return (

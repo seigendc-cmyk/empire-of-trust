@@ -12,6 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "datapack:generate-keys": "tsx scripts/generate-keys.ts",
+    "datapack:sign": "tsx scripts/sign-datapack.ts",
     "check": "npm run typecheck && npm test && npm run build"
   },
   "dependencies": {

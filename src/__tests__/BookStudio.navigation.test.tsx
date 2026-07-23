@@ -258,6 +258,17 @@ describe('BookStudio workspace navigation', () => {
     }
   });
 
+  it('opens the full Series Book Studio page from Book Publishing Studio', async () => {
+    await renderStudio();
+    await act(async () => {
+      click('#studio-series-btn');
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Series Book Studio');
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+  });
+
   it('keeps destructive deletion blocked when flushing pending changes fails', async () => {
     mocks.saveBook.mockRejectedValue(new Error('SQLite unavailable'));
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);

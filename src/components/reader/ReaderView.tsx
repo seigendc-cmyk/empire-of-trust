@@ -18,6 +18,8 @@ import { SceneCastViewer } from './SceneCastViewer';
 interface ReaderViewProps {
   book: Book;
   onBackToLibrary: () => void;
+  availableSeriesBooks?: Book[];
+  onOpenSeriesBook?: (book: Book) => void;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -473,7 +475,30 @@ const CoachingProgressReportModal: React.FC<CoachingProgressReportModalProps> = 
   );
 };
 
-export const ReaderView: React.FC<ReaderViewProps> = ({ book, onBackToLibrary }) => {
+export const ReaderView: React.FC<ReaderViewProps> = ({
+  book,
+  onBackToLibrary,
+  availableSeriesBooks = [],
+  onOpenSeriesBook,
+}) => {
+  const seriesBooks = availableSeriesBooks
+    .filter((candidate) =>
+      candidate.id === book.id ||
+      (
+        candidate.seriesConfig?.isSeries &&
+        (
+          candidate.seriesConfig.seriesProjectId === book.seriesConfig?.seriesProjectId ||
+          (!book.seriesConfig?.seriesProjectId && candidate.seriesConfig.seriesName === book.seriesConfig?.seriesName)
+        )
+      )
+    )
+    .sort((left, right) =>
+      (left.seriesConfig?.seasonNumber || 0) - (right.seriesConfig?.seasonNumber || 0) ||
+      (left.seriesConfig?.episodeNumber || 0) - (right.seriesConfig?.episodeNumber || 0)
+    );
+  const seriesIndex = seriesBooks.findIndex((candidate) => candidate.id === book.id);
+  const previousSeriesBook = seriesIndex > 0 ? seriesBooks[seriesIndex - 1] : undefined;
+  const nextSeriesBook = seriesIndex >= 0 ? seriesBooks[seriesIndex + 1] : undefined;
   const [currentChapterIdx, setCurrentChapterIdx] = useState(0);
   const [fontSize, setFontSize] = useState<number>(18);
   const [fontFamily, setFontFamily] = useState<'serif' | 'sans' | 'mono'>('serif');
@@ -1112,6 +1137,65 @@ export const ReaderView: React.FC<ReaderViewProps> = ({ book, onBackToLibrary })
                   {book.seriesConfig.previousEpisodeRecap}
                 </div>
               </div>
+            )}
+
+            {book.seriesConfig?.isSeries && (
+              <section aria-label="Series progress" className="border border-gray-500/25 bg-black/5 p-5 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-orange-500">Series Progress</p>
+                    <h3 className="text-sm font-bold">{book.seriesConfig.seriesName || 'Series'}</h3>
+                  </div>
+                  <span className="text-xs font-mono opacity-70">
+                    {seriesIndex >= 0 ? `${seriesIndex + 1} of ${seriesBooks.length} available` : `${seriesBooks.length} available`}
+                  </span>
+                </div>
+                <div className="h-1.5 bg-gray-500/20">
+                  <div
+                    className="h-full bg-orange-500"
+                    style={{ width: `${seriesBooks.length && seriesIndex >= 0 ? ((seriesIndex + 1) / seriesBooks.length) * 100 : 0}%` }}
+                  />
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    disabled={!previousSeriesBook}
+                    onClick={() => previousSeriesBook && onOpenSeriesBook?.(previousSeriesBook)}
+                    className="flex items-center gap-2 border border-gray-500/25 px-3 py-2 text-left text-xs font-bold disabled:opacity-40"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    <span><span className="block text-[9px] uppercase opacity-60">Previous episode</span>{previousSeriesBook?.title || 'Unavailable'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!nextSeriesBook}
+                    onClick={() => nextSeriesBook && onOpenSeriesBook?.(nextSeriesBook)}
+                    className="flex items-center justify-end gap-2 border border-gray-500/25 px-3 py-2 text-right text-xs font-bold disabled:opacity-40"
+                  >
+                    <span><span className="block text-[9px] uppercase opacity-60">Next episode</span>{nextSeriesBook?.title || book.seriesConfig.nextEpisodeTitle || 'Locked / unavailable'}</span>
+                    {nextSeriesBook ? <ChevronRight className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
+                  </button>
+                </div>
+                {book.seriesConfig.nextEpisodeReleaseDate && !nextSeriesBook && (
+                  <p className="text-center text-[10px] font-mono opacity-70">Release schedule: {book.seriesConfig.nextEpisodeReleaseDate}</p>
+                )}
+                {seriesBooks.length > 1 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {seriesBooks.map((seriesBook) => (
+                      <button
+                        key={seriesBook.id}
+                        type="button"
+                        onClick={() => onOpenSeriesBook?.(seriesBook)}
+                        className={`border px-2 py-1 text-[10px] font-bold ${
+                          seriesBook.id === book.id ? 'border-orange-500 bg-orange-500 text-white' : 'border-gray-500/25'
+                        }`}
+                      >
+                        S{seriesBook.seriesConfig?.seasonNumber || 1}E{seriesBook.seriesConfig?.episodeNumber || 1}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </section>
             )}
 
             {/* Executive Summary & Front Matter Legal Notes */}

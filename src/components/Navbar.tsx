@@ -279,8 +279,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       <div className="md:hidden fixed bottom-3 left-3 right-3 z-50 pointer-events-auto">
         <nav className="bg-[#2c2c2c]/95 backdrop-blur-md border border-[#444] rounded-2xl p-1.5 shadow-2xl flex items-center justify-around max-w-md mx-auto ring-1 ring-black/40">
           
-          {!isMobileOrTablet && (
-            <button
+          <button
               onClick={() => onSelectView('studio')}
               className={`flex-1 flex flex-col items-center justify-center py-2 px-1 rounded-xl text-[11px] font-medium transition-all cursor-pointer ${
                 currentView === 'studio'
@@ -290,8 +289,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <Edit3 className="w-4 h-4 mb-0.5" />
               <span>Studio</span>
-            </button>
-          )}
+          </button>
 
           <button
             onClick={() => onSelectView('portal')}

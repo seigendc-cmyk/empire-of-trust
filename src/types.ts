@@ -251,6 +251,220 @@ export interface BookSeriesConfig {
   nextEpisodeTitle?: string;     // e.g. "Episode 3: The Boardroom Showdown"
   nextEpisodeReleaseDate?: string; // e.g. "Releasing August 2026"
   showSeriesBannerInReader?: boolean;
+  seriesProjectId?: string;
+  seriesSeasonId?: string;
+  seriesEpisodeId?: string;
+  legacyConvertedAt?: string;
+}
+
+export type SeriesProjectStatus = 'concept' | 'planning' | 'active' | 'completed' | 'archived';
+export type SeriesSeasonStatus = 'planned' | 'active' | 'completed' | 'archived';
+export type SeriesEpisodeStatus =
+  | 'planned'
+  | 'outlined'
+  | 'writing'
+  | 'editing'
+  | 'ready'
+  | 'scheduled'
+  | 'published'
+  | 'archived';
+export type SeriesArcStatus = 'planned' | 'active' | 'resolved' | 'abandoned';
+export type SeriesContinuitySeverity = 'info' | 'warning' | 'error';
+export type SeriesReleaseModel = 'full-season' | 'weekly' | 'monthly' | 'irregular';
+
+export interface SeriesProject {
+  id: string;
+  title: string;
+  subtitle: string;
+  description: string;
+  genre: string;
+  subGenres: string[];
+  targetAudience: string;
+  language: string;
+  status: SeriesProjectStatus;
+  authorIds: string[];
+  publisherId: string;
+  coverAssetId?: string;
+  bannerAssetId?: string;
+  theme: string;
+  premise: string;
+  centralConflict: string;
+  seriesPromise: string;
+  intendedReaderValue: string;
+  plannedSeasonCount: number;
+  plannedEpisodeCount: number;
+  episodeNamingConvention: string;
+  numberingFormat: string;
+  worldDescription: string;
+  historicalBackground: string;
+  culturalNotes: string;
+  organizations: string[];
+  terminology: string[];
+  systemRules: string[];
+  releaseModel: SeriesReleaseModel;
+  pricingStrategy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SeriesSeason {
+  id: string;
+  seriesId: string;
+  seasonNumber: number;
+  title: string;
+  subtitle: string;
+  synopsis: string;
+  theme: string;
+  centralConflict: string;
+  openingSituation: string;
+  climax: string;
+  resolution: string;
+  nextSeasonHook: string;
+  status: SeriesSeasonStatus;
+  plannedReleaseDate?: string;
+  orderIndex: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SeriesEpisode {
+  id: string;
+  seriesId: string;
+  seasonId: string;
+  linkedBookId?: string;
+  episodeNumber: number;
+  title: string;
+  subtitle: string;
+  logline: string;
+  synopsis: string;
+  openingHook: string;
+  previousEpisodeRecap: string;
+  episodeGoal: string;
+  centralConflict: string;
+  stakes: string;
+  subplots: string[];
+  midpointTurn: string;
+  climax: string;
+  resolution: string;
+  cliffhanger: string;
+  nextEpisodeTeaser: string;
+  requiredCharacterIds: string[];
+  locationIds: string[];
+  objectIds: string[];
+  continuityObligations: string[];
+  releaseDate?: string;
+  writingDeadline?: string;
+  editingDeadline?: string;
+  coverDeadline?: string;
+  signingDeadline?: string;
+  marketingLaunchDate?: string;
+  status: SeriesEpisodeStatus;
+  wordCountTarget: number;
+  orderIndex: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SeriesStoryArc {
+  id: string;
+  seriesId: string;
+  seasonId?: string;
+  characterId?: string;
+  title: string;
+  description: string;
+  arcType: string;
+  startEpisodeId?: string;
+  endEpisodeId?: string;
+  status: SeriesArcStatus;
+  milestones: string[];
+  seriesRole?: string;
+  startingCondition?: string;
+  desire?: string;
+  need?: string;
+  fear?: string;
+  secret?: string;
+  transformation?: string;
+  endCondition?: string;
+  unresolvedThread?: string;
+}
+
+export interface SeriesTimelineEvent {
+  id: string;
+  seriesId: string;
+  seasonId?: string;
+  episodeId?: string;
+  title: string;
+  description: string;
+  storyDate?: string;
+  sequenceNumber: number;
+  location: string;
+  characterIds: string[];
+  consequence: string;
+  continuityNotes: string;
+}
+
+export interface SeriesContinuityRule {
+  id: string;
+  seriesId: string;
+  category: string;
+  subjectId?: string;
+  statement: string;
+  sourceEpisodeId?: string;
+  severity: SeriesContinuitySeverity;
+  active: boolean;
+}
+
+export interface SeriesLocation {
+  id: string;
+  seriesId: string;
+  name: string;
+  description: string;
+  geography: string;
+  culturalNotes: string;
+  visualNotes: string;
+  firstAppearanceEpisodeId?: string;
+  assetIds: string[];
+}
+
+export interface SeriesObject {
+  id: string;
+  seriesId: string;
+  name: string;
+  type: string;
+  description: string;
+  ownerCharacterId?: string;
+  firstAppearanceEpisodeId?: string;
+  importance: string;
+  assetIds: string[];
+}
+
+export interface SeriesRelationship {
+  id: string;
+  seriesId: string;
+  sourceCharacterId: string;
+  targetCharacterId: string;
+  relationshipType: string;
+  status: string;
+  description: string;
+  startedEpisodeId?: string;
+  endedEpisodeId?: string;
+  trustLevel?: number;
+  conflict?: string;
+  changesByEpisode: string[];
+}
+
+export interface EpisodeProductionChecklist {
+  episodeId: string;
+  outlineComplete: boolean;
+  manuscriptComplete: boolean;
+  continuityReviewed: boolean;
+  referencesReviewed: boolean;
+  legalReviewed: boolean;
+  coverComplete: boolean;
+  pricingComplete: boolean;
+  marketingComplete: boolean;
+  signingReady: boolean;
+  publicationReady: boolean;
 }
 
 export interface AuthorDetails {

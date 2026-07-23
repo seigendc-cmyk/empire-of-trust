@@ -512,6 +512,18 @@ export const ReaderShell: React.FC<ReaderShellProps> = ({
       }
       return 0;
     });
+  const availableSeriesBooks = library.flatMap((item) => {
+    try {
+      const parsed = JSON.parse(item.dataPackJson);
+      const candidate = (parsed.book || parsed) as Book;
+      return candidate?.id ? [candidate] : [];
+    } catch {
+      return [];
+    }
+  });
+  if (activeReadingBook && !availableSeriesBooks.some((book) => book.id === activeReadingBook.id)) {
+    availableSeriesBooks.push(activeReadingBook);
+  }
 
   // If reading active book, render full screen ReaderView
   if (activeReadingBook) {
@@ -519,6 +531,8 @@ export const ReaderShell: React.FC<ReaderShellProps> = ({
       <ReaderView
         book={activeReadingBook}
         onBackToLibrary={() => setActiveReadingBook(null)}
+        availableSeriesBooks={availableSeriesBooks}
+        onOpenSeriesBook={setActiveReadingBook}
       />
     );
   }

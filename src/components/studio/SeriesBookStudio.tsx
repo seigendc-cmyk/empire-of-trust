@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle, ArrowLeft, BookCopy, CalendarDays, Database, Image, LayoutDashboard,
-  ListChecks, Plus, RefreshCw, ScrollText, ShieldCheck, Users,
+  ListChecks, Plus, RefreshCw, ScrollText, ShieldCheck, Users, Globe2,
 } from 'lucide-react';
 import {
   Book, EpisodeProductionChecklist, SeriesContinuityRule, SeriesEpisode, SeriesLocation,
@@ -34,8 +34,9 @@ import { SeriesAssetsPanel } from './series/SeriesAssetsPanel';
 import { SeriesReadinessPanel } from './series/SeriesReadinessPanel';
 import { SeriesPreviewPanel } from './series/SeriesPreviewPanel';
 import { SeasonDetailPanel } from './series/SeasonDetailPanel';
+import { SeriesDistributionPanel } from './series/SeriesDistributionPanel';
 
-type Workspace = 'dashboard' | 'structure' | 'bible' | 'cast' | 'timeline' | 'continuity' | 'release' | 'assets' | 'preview';
+type Workspace = 'dashboard' | 'structure' | 'bible' | 'cast' | 'timeline' | 'continuity' | 'release' | 'assets' | 'preview' | 'distribution';
 type BookDestination = 'content' | 'covers' | 'publish' | 'marketing';
 
 interface SeriesBookStudioProps {
@@ -50,6 +51,7 @@ const navigation: Array<[Workspace, string, React.ComponentType<{ className?: st
   ['bible','Story Bible',ScrollText],['cast','Characters & Arcs',Users],
   ['timeline','Timeline',CalendarDays],['continuity','Continuity',ShieldCheck],
   ['release','Release Planner',ListChecks],['assets','Assets',Image],['preview','Reader Preview',BookCopy],
+  ['distribution','Publish & POP',Globe2],
 ];
 
 export const SeriesBookStudio: React.FC<SeriesBookStudioProps> = ({ books, onBackToBooks, onBooksChanged, onOpenBook }) => {
@@ -251,6 +253,7 @@ export const SeriesBookStudio: React.FC<SeriesBookStudioProps> = ({ books, onBac
               {workspace === 'release' && <ReleasePlanner episodes={episodes} onSave={saveEpisode} />}
               {workspace === 'assets' && <SeriesAssetsPanel project={project} onSave={saveProject} />}
               {workspace === 'preview' && <SeriesPreviewPanel project={project} season={selectedSeason} episode={selectedEpisode} />}
+              {workspace === 'distribution' && <SeriesDistributionPanel project={project} seasons={seasons} episodes={episodes} books={books} />}
             </div>
           )}
         </main>

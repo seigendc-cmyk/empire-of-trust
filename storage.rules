@@ -1,0 +1,27 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isPublisher() {
+      return request.auth != null &&
+        (request.auth.token.admin == true || request.auth.token.publisher == true);
+    }
+    match /pop-receipts/{readerId}/{paymentId}/{fileName} {
+      allow read: if request.auth != null &&
+        (request.auth.uid == readerId || isPublisher());
+      allow create: if request.auth != null && request.auth.uid == readerId &&
+        request.resource.size < 10 * 1024 * 1024 &&
+        request.resource.contentType.matches('image/.*|application/pdf');
+      allow update, delete: if false;
+    }
+    match /protected-packages/{readerId}/{packageId}/{fileName} {
+      allow read, write: if false; // Service account only; downloads use short-lived signed URLs.
+    }
+    match /public-series-assets/{seriesId}/{fileName} {
+      allow read: if true;
+      allow write: if isPublisher() && request.resource.size < 20 * 1024 * 1024;
+    }
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

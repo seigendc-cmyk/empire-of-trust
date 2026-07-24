@@ -11,6 +11,7 @@ import { verifyAccessCode, formatWhatsAppPopUrl } from '../../lib/accessCodes';
 import { DATA_PACK_PUBLIC_KEYS } from '@/config/keys';
 import { fetchPublishedBooksFromFirestore } from '../../lib/firebase';
 import { ReaderView } from './ReaderView';
+import { PublicSeriesCatalogue } from '../portal/PublicSeriesCatalogue';
 
 interface ReaderShellProps {
   user: ReaderProfile | null;
@@ -539,6 +540,16 @@ export const ReaderShell: React.FC<ReaderShellProps> = ({
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8 copy-protected-shell select-none relative">
+      {isOnline && (
+        <PublicSeriesCatalogue
+          readerId={user?.uid}
+          readerPhone={readerPhone}
+          onPackageDownloaded={async (file) => {
+            const content = await extractDataPackFromFile(file);
+            await handleImportPackString(content);
+          }}
+        />
+      )}
       
       {/* Toast Overlay for Copy/Context-Menu Block Notification */}
       {copyBlockedToast && (

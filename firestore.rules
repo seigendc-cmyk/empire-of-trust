@@ -1,29 +1,213 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Books collection - readable and writable by users/authors
+    // Assumed model:
+    // publicSeries/{seriesId}: public-safe title/description/pricing/status only.
+    // publicSeries/{seriesId}/{seasons|episodes}/{id}: public-safe release metadata only.
+    // proofsOfPayment/{id}: reader PII/payment evidence, owner-readable and service-reviewed.
+    // readerEntitlements/{id}: owner-readable, service-created/revoked.
+    // issuedDataPacks/{id}: protected package metadata, entitled owner-readable.
+    // packageDownloadLogs/{id}, paymentTransactionReferences/{id}: service-only.
+    // books/{id}: private publisher source records; never public.
+    // userLibraries/{uid}: private reader library metadata.
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+    function isDocOwner() {
+      return isAuthenticated() && resource.data.readerId == request.auth.uid;
+    }
+    function uidUnchanged(uid) {
+      return request.resource.data.readerId == uid;
+    }
+    function uidNotModified() {
+      return request.resource.data.readerId == resource.data.readerId;
+    }
+    function isPublisher() {
+      return isAuthenticated() &&
+        (request.auth.token.admin == true || request.auth.token.publisher == true);
+    }
+    function shortString(value, max) {
+      return value is string && value.size() <= max;
+    }
+    function optionalString(data, field, max) {
+      return !(field in data) || shortString(data[field], max);
+    }
+    function validMoney(value) {
+      return value is number && value >= 0 && value <= 1000000;
+    }
+    function validPublicUrl(value) {
+      return value == '' || (shortString(value, 2048) && value.matches('^https://.*'));
+    }
+    function validShortStringList20(values) {
+      return values is list && values.size() <= 20 &&
+        (values.size() < 1 || shortString(values[0], 100)) &&
+        (values.size() < 2 || shortString(values[1], 100)) &&
+        (values.size() < 3 || shortString(values[2], 100)) &&
+        (values.size() < 4 || shortString(values[3], 100)) &&
+        (values.size() < 5 || shortString(values[4], 100)) &&
+        (values.size() < 6 || shortString(values[5], 100)) &&
+        (values.size() < 7 || shortString(values[6], 100)) &&
+        (values.size() < 8 || shortString(values[7], 100)) &&
+        (values.size() < 9 || shortString(values[8], 100)) &&
+        (values.size() < 10 || shortString(values[9], 100)) &&
+        (values.size() < 11 || shortString(values[10], 100)) &&
+        (values.size() < 12 || shortString(values[11], 100)) &&
+        (values.size() < 13 || shortString(values[12], 100)) &&
+        (values.size() < 14 || shortString(values[13], 100)) &&
+        (values.size() < 15 || shortString(values[14], 100)) &&
+        (values.size() < 16 || shortString(values[15], 100)) &&
+        (values.size() < 17 || shortString(values[16], 100)) &&
+        (values.size() < 18 || shortString(values[17], 100)) &&
+        (values.size() < 19 || shortString(values[18], 100)) &&
+        (values.size() < 20 || shortString(values[19], 100));
+    }
+    function validPublicSeries(data) {
+      return data.keys().hasOnly([
+        'id','title','subtitle','description','genre','subGenres','targetAudience',
+        'language','publisherId','coverUrl','bannerUrl','category','price','currency',
+        'status','publishedAt','updatedAt'
+      ]) &&
+      data.keys().hasAll(['id','title','subtitle','description','genre','subGenres',
+        'targetAudience','language','publisherId','coverUrl','bannerUrl','category',
+        'price','currency','status','updatedAt']) &&
+      shortString(data.id, 128) && shortString(data.title, 200) &&
+      shortString(data.subtitle, 300) && shortString(data.description, 5000) &&
+      shortString(data.genre, 100) && validShortStringList20(data.subGenres) &&
+      shortString(data.targetAudience, 200) && shortString(data.language, 40) &&
+      shortString(data.publisherId, 128) && validPublicUrl(data.coverUrl) &&
+      validPublicUrl(data.bannerUrl) && shortString(data.category, 100) &&
+      validMoney(data.price) && shortString(data.currency, 8) &&
+      data.status in ['draft','scheduled','published','unpublished'] &&
+      optionalString(data, 'publishedAt', 40) && shortString(data.updatedAt, 40);
+    }
+    function validPublicSeason(data, seriesId) {
+      return data.keys().hasOnly(['id','seriesId','seasonNumber','title','subtitle',
+        'synopsis','price','currency','status','publishedAt','updatedAt']) &&
+      data.keys().hasAll(['id','seriesId','seasonNumber','title','subtitle','synopsis',
+        'price','currency','status','updatedAt']) &&
+      data.seriesId == seriesId && shortString(data.id, 128) &&
+      data.seasonNumber is int && data.seasonNumber > 0 && data.seasonNumber < 10000 &&
+      shortString(data.title, 200) && shortString(data.subtitle, 300) &&
+      shortString(data.synopsis, 5000) && validMoney(data.price) &&
+      shortString(data.currency, 8) &&
+      data.status in ['draft','scheduled','published','unpublished'] &&
+      optionalString(data, 'publishedAt', 40) && shortString(data.updatedAt, 40);
+    }
+    function validPublicEpisode(data, seriesId) {
+      return data.keys().hasOnly(['id','seriesId','seasonId','episodeNumber','title',
+        'subtitle','logline','synopsis','coverUrl','price','currency','releaseStatus',
+        'releaseAt','bookId','previousEpisodeRecap','nextEpisodeTeaser','updatedAt']) &&
+      data.keys().hasAll(['id','seriesId','seasonId','episodeNumber','title','subtitle',
+        'logline','synopsis','coverUrl','price','currency','releaseStatus','updatedAt']) &&
+      data.seriesId == seriesId && shortString(data.id, 128) &&
+      shortString(data.seasonId, 128) && data.episodeNumber is int &&
+      data.episodeNumber > 0 && data.episodeNumber < 100000 &&
+      shortString(data.title, 200) && shortString(data.subtitle, 300) &&
+      shortString(data.logline, 1000) && shortString(data.synopsis, 5000) &&
+      validPublicUrl(data.coverUrl) && validMoney(data.price) &&
+      shortString(data.currency, 8) &&
+      data.releaseStatus in ['locked','coming-soon','released','unpublished'] &&
+      optionalString(data, 'releaseAt', 40) && optionalString(data, 'bookId', 128) &&
+      optionalString(data, 'previousEpisodeRecap', 5000) &&
+      optionalString(data, 'nextEpisodeTeaser', 5000) &&
+      shortString(data.updatedAt, 40);
+    }
+    function validProofOfPayment(data) {
+      return data.keys().hasOnly(['id','readerId','readerPhone','scope','seriesId',
+        'seasonId','episodeId','bookId','amount','currency','paymentMethod',
+        'transactionReference','receiptStoragePath','status','submittedAt','reviewedAt',
+        'reviewedBy','reviewerNotes','complimentaryApprovedBy','audit']) &&
+      data.keys().hasAll(['id','readerId','readerPhone','scope','seriesId','amount',
+        'currency','paymentMethod','transactionReference','status','submittedAt',
+        'reviewerNotes','audit']) &&
+      shortString(data.id, 128) && shortString(data.readerId, 128) &&
+      shortString(data.readerPhone, 40) && data.scope in ['episode','season','series'] &&
+      shortString(data.seriesId, 128) && optionalString(data, 'seasonId', 128) &&
+      optionalString(data, 'episodeId', 128) && optionalString(data, 'bookId', 128) &&
+      validMoney(data.amount) && shortString(data.currency, 8) &&
+      shortString(data.paymentMethod, 100) && shortString(data.transactionReference, 200) &&
+      optionalString(data, 'receiptStoragePath', 512) &&
+      data.status in ['submitted','under-review','verified','rejected','cancelled'] &&
+      shortString(data.submittedAt, 40) && optionalString(data, 'reviewedAt', 40) &&
+      optionalString(data, 'reviewedBy', 128) && shortString(data.reviewerNotes, 4000) &&
+      optionalString(data, 'complimentaryApprovedBy', 128) &&
+      data.audit is list && data.audit.size() <= 100;
+    }
+    function validUserLibrary(data, uid) {
+      return data.keys().hasOnly(['userId','phoneNumber','deviceId','purchasedBooks','updatedAt']) &&
+      data.keys().hasAll(['userId','phoneNumber','deviceId','purchasedBooks','updatedAt']) &&
+      data.userId == uid && shortString(data.phoneNumber, 40) &&
+      shortString(data.deviceId, 200) && validShortStringList20(data.purchasedBooks) &&
+      shortString(data.updatedAt, 40);
+    }
+
+    match /publicSeries/{seriesId} {
+      allow read: if resource.data.status == 'published';
+      allow create, update: if isPublisher() && validPublicSeries(request.resource.data);
+      allow delete: if isPublisher();
+
+      match /seasons/{seasonId} {
+        allow read: if resource.data.status == 'published' &&
+          exists(/databases/$(database)/documents/publicSeries/$(seriesId));
+        allow create, update: if isPublisher() && validPublicSeason(request.resource.data, seriesId);
+        allow delete: if isPublisher();
+      }
+      match /episodes/{episodeId} {
+        allow read: if resource.data.releaseStatus in ['locked','coming-soon','released'] &&
+          exists(/databases/$(database)/documents/publicSeries/$(seriesId));
+        allow create, update: if isPublisher() && validPublicEpisode(request.resource.data, seriesId);
+        allow delete: if isPublisher();
+      }
+    }
+
+    match /proofsOfPayment/{paymentId} {
+      allow create: if false; // /api/pop-submit enforces price, release state and replay protection.
+      allow read: if isDocOwner() || isPublisher();
+      allow update: if isPublisher() && uidUnchanged(resource.data.readerId) && uidNotModified() &&
+        validProofOfPayment(request.resource.data);
+      allow delete: if false;
+    }
+
+    match /readerEntitlements/{entitlementId} {
+      allow read: if isDocOwner() || isPublisher();
+      allow create, update, delete: if false;
+    }
+
+    match /issuedDataPacks/{packageId} {
+      allow read: if isDocOwner() || isPublisher();
+      allow create, update, delete: if false;
+    }
+
     match /books/{bookId} {
-      allow read, write: if true;
-
-      match /chapters/{chapterId} {
-        allow read, write: if true;
-      }
-
-      match /references/{refId} {
-        allow read, write: if true;
+      allow read, create, update, delete: if isPublisher();
+      match /{privateChild=**} {
+        allow read, write: if isPublisher();
       }
     }
 
-    // User libraries collection
-    match /userLibraries/{userId} {
-      allow read, write: if true;
+    match /userLibraries/{uid} {
+      allow read: if isOwner(uid);
+      allow create, update: if isOwner(uid) && validUserLibrary(request.resource.data, uid);
+      allow delete: if isOwner(uid);
     }
-    
-    // Default fallback
+
+    match /paymentTransactionReferences/{referenceId} {
+      allow read, write: if false;
+    }
+    match /packageDownloadLogs/{logId} {
+      allow read: if isPublisher();
+      allow write: if false;
+    }
+    match /publisherProfiles/{uid} {
+      allow read: if isOwner(uid) || isPublisher();
+      allow write: if false;
+    }
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }
-

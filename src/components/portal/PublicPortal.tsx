@@ -12,6 +12,7 @@ import { formatWhatsAppPopUrl, verifyAccessCode } from '../../lib/accessCodes';
 import { VendorTimedSlidesCard } from './VendorTimedSlidesCard';
 import { VendorStorefrontModal } from './VendorStorefrontModal';
 import { getVendorProfile, getVendorProducts } from '../../lib/vendorStorage';
+import { PublicSeriesCatalogue } from './PublicSeriesCatalogue';
 
 interface PublicPortalProps {
   user: ReaderProfile | null;
@@ -178,6 +179,7 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+      <PublicSeriesCatalogue readerId={user?.uid} readerPhone={user?.phoneNumber} />
       
       {/* Portal Hero Banner */}
       <div className="relative rounded-xl bg-[#2c2c2c] text-white border border-[#1a1a1a] p-8 shadow-sm overflow-hidden">

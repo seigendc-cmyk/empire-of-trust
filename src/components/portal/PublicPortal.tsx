@@ -6,7 +6,6 @@ import {
 } from 'lucide-react';
 import { Book, ReaderProfile, BookDataPack, DEFAULT_BOOK_CATEGORIES, VendorProfile } from '../../types';
 import { fetchPublishedBooksFromFirestore } from '../../lib/firebase';
-import { getAllLocalBooks } from '../../lib/sqlite';
 import { getOrCreateDeviceId, savePhoneNumber, getSavedPhoneNumber } from '../../lib/dataPack';
 import { formatWhatsAppPopUrl, verifyAccessCode } from '../../lib/accessCodes';
 import { VendorTimedSlidesCard } from './VendorTimedSlidesCard';
@@ -15,12 +14,14 @@ import { getVendorProfile, getVendorProducts } from '../../lib/vendorStorage';
 import { PublicSeriesCatalogue } from './PublicSeriesCatalogue';
 
 interface PublicPortalProps {
+  initialBookId?: string;
   user: ReaderProfile | null;
   onOpenAuth: () => void;
   onOpenReaderWithBook: (book: Book, dataPackJson?: string) => void;
 }
 
 export const PublicPortal: React.FC<PublicPortalProps> = ({
+  initialBookId,
   user,
   onOpenAuth,
   onOpenReaderWithBook,
@@ -57,20 +58,11 @@ export const PublicPortal: React.FC<PublicPortalProps> = ({
 
   const loadPortalBooks = async () => {
     try {
-      // Load from Firestore first
       const cloudBooks = await fetchPublishedBooksFromFirestore();
-      
-      // Also merge local SQLite published books so local drafts are testable instantly
-      const localBooks = await getAllLocalBooks();
-      const localPublished = localBooks.filter((b) => b.isPublished);
-
-      // Unique merge by ID
-      const bookMap = new Map<string, Book>();
-      localPublished.forEach((b) => bookMap.set(b.id, b));
-      cloudBooks.forEach((b) => bookMap.set(b.id, b));
-
-      const merged = Array.from(bookMap.values());
-      setPublishedBooks(merged);
+      setPublishedBooks(cloudBooks);
+      if (initialBookId) {
+        setPreviewModalBook(cloudBooks.find((book) => book.id === initialBookId) || null);
+      }
     } catch (err) {
       console.warn('Portal books load error:', err);
     }

@@ -35,10 +35,12 @@ import { DebouncedSaveQueue } from '../../lib/debouncedSave';
 interface BookStudioProps {
   user: ReaderProfile | null;
   onOpenAuth: () => void;
+  initialMode?: 'books' | 'series';
+  initialBookId?: string;
 }
 
-export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
-  const [studioMode, setStudioMode] = useState<'books' | 'series'>('books');
+export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth, initialMode = 'books', initialBookId }) => {
+  const [studioMode, setStudioMode] = useState<'books' | 'series'>(initialMode);
   const [books, setBooks] = useState<Book[]>([]);
   const [activeBookId, setActiveBookId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'content' | 'covers' | 'references' | 'publish' | 'marketing'>('content');
@@ -157,9 +159,10 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
       if (local.length > 0) {
         setBooks(local);
         if (!activeBookId) {
-          setActiveBookId(local[0].id);
-          if (local[0].chapters.length > 0) {
-            setActiveChapterId(local[0].chapters[0].id);
+          const selected = local.find((book) => book.id === initialBookId) || local[0];
+          setActiveBookId(selected.id);
+          if (selected.chapters.length > 0) {
+            setActiveChapterId(selected.chapters[0].id);
           }
         }
         return local;

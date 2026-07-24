@@ -47,6 +47,66 @@ Clients can read only their own staff record. They cannot create, edit, or
 delete it—including their own roles. Invitations and role changes must be
 administrator-authorized server operations.
 
+### First-administrator bootstrap
+
+The first administrator must be bootstrapped outside the browser. The safest
+one-time path is the Firebase Console:
+
+1. Sign in once through `/staff/login` so Firebase Authentication creates the
+   genuine Google-backed user.
+2. In Firebase Console, open **Authentication → Users** and copy that user's
+   exact Firebase UID.
+3. Open **Firestore Database** and select the named database
+   `ai-studio-57118877-ceb5-4cf7-9e31-c5f548597a37`—not `(default)`.
+4. Create `staffUsers/{uid}`, using the Firebase UID as both document ID and the
+   `uid` field.
+5. Add the following fields:
+   - `uid`, `email`, `displayName`, `createdBy`: strings;
+   - `status`: `active`;
+   - `roles`: array containing `administrator`;
+   - `permissions`: array containing `staff.portal.view`, `books.view`,
+     `books.edit`, `series.view`, `series.edit`, `payments.review`,
+     `publishing.manage`, `audit.view`, and `team.view`;
+   - `assignedSeriesIds`, `assignedSeasonIds`, `assignedEpisodeIds`: empty
+     arrays initially;
+   - `createdAt`, `lastLoginAt`: Firestore timestamps.
+
+Do not place Admin SDK credentials in the web application, and do not add a
+client-side staff-record creation path. A repeatable bootstrap utility, if
+needed later, must use Firebase Admin SDK with Application Default Credentials
+or an environment-provided service account and must refuse overwrites unless an
+explicit force flag is supplied.
+
+### Preview authorization diagnosis
+
+The web client targets project `gen-lang-client-0459000055` and the named
+Enterprise Native-mode database
+`ai-studio-57118877-ceb5-4cf7-9e31-c5f548597a37`. A Firestore
+`permission-denied` after Google sign-in occurs before staff status or
+`books.view` can be evaluated: it means the authenticated self-read of
+`staffUsers/{uid}` was denied. Deploy the reviewed rules to that named database
+before diagnosing a missing or malformed staff document.
+
+Validate locally without deploying:
+
+```powershell
+npx -y firebase-tools@latest deploy --only firestore:rules --dry-run --project gen-lang-client-0459000055
+```
+
+After review, an administrator can deploy only the rules (never as part of this
+preview-auth code change):
+
+```powershell
+npx -y firebase-tools@latest use gen-lang-client-0459000055
+npx -y firebase-tools@latest deploy --only firestore:rules
+```
+
+If Firebase returns `auth/unauthorized-domain`, open **Authentication →
+Settings → Authorized domains → Add domain** and add the exact hostname only:
+`gen-lang-client-0459000055--book-builder-console-g0hk1grw.web.app`. The
+observed preview failure happened after Google authentication and therefore did
+not indicate this domain error.
+
 ## Audit schema
 
 `staffAuditLogs/{eventId}` is append-only and contains:

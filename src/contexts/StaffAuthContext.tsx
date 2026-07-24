@@ -3,7 +3,7 @@ import React, {
 } from 'react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { auth } from '../lib/firebase';
-import { getStaffUser } from '../lib/staffAuth';
+import { getStaffAuthErrorMessage, getStaffUser } from '../lib/staffAuth';
 import type { StaffUser } from '../types/staff';
 
 export type StaffAuthPhase =
@@ -11,6 +11,8 @@ export type StaffAuthPhase =
   | 'unauthenticated'
   | 'non-staff'
   | 'suspended'
+  | 'invited'
+  | 'disabled'
   | 'authorized'
   | 'error';
 
@@ -52,10 +54,14 @@ export const StaffAuthProvider: React.FC<React.PropsWithChildren> = ({ children 
       setStaffUser(staff);
       if (!staff) setPhase('non-staff');
       else if (staff.status === 'suspended') setPhase('suspended');
-      else if (staff.status !== 'active') setPhase('non-staff');
+      else if (staff.status === 'invited') setPhase('invited');
+      else if (staff.status === 'disabled') setPhase('disabled');
       else setPhase('authorized');
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Staff authorization failed.');
+      if (import.meta.env.DEV) {
+        console.error('Staff authorization resolution failed:', cause);
+      }
+      setError(getStaffAuthErrorMessage(cause));
       setPhase('error');
     }
   };

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Download, LogIn, RefreshCw, ShieldX } from 'lucide-react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
 import { useStaffAuth } from '../../contexts/StaffAuthContext';
-import { signInStaffWithGoogle } from '../../lib/staffAuth';
+import { getStaffAuthErrorMessage, signInStaffWithGoogle } from '../../lib/staffAuth';
 import { exportStaffAuditLogs, listStaffAuditLogs } from '../../lib/staffAudit';
 import type { StaffAuditFilters, StaffAuditLog } from '../../types/staff';
 
@@ -12,13 +12,30 @@ export const StaffLoginPage: React.FC = () => {
   const [message, setMessage] = useState('');
   const destination = (location.state as { from?: string } | null)?.from || '/staff';
   if (phase === 'authorized') return <Navigate to={destination} replace />;
+  const phaseMessage = {
+    'non-staff': 'Google sign-in succeeded, but no staff record exists for this account.',
+    suspended: 'This staff account is suspended. Contact an administrator to restore access.',
+    invited: 'This staff invitation has not been activated yet.',
+    disabled: 'This staff account is disabled. Contact an administrator for assistance.',
+  }[phase] || '';
+  const signIn = async () => {
+    setMessage('');
+    try {
+      await signInStaffWithGoogle();
+    } catch (cause) {
+      if (import.meta.env.DEV) {
+        console.error('Staff Google sign-in failed:', cause);
+      }
+      setMessage(getStaffAuthErrorMessage(cause));
+    }
+  };
   return <div className="grid min-h-screen place-items-center bg-[#202428] p-4 text-white">
     <section className="w-full max-w-md border border-white/15 bg-[#292e33] p-7">
       <p className="text-xs font-extrabold uppercase text-[#ff8b59]">Protected staff portal</p>
       <h1 className="mt-2 text-2xl font-extrabold">Staff sign in</h1>
       <p className="mt-2 text-sm text-gray-300">Use a genuine Firebase Google account with an active staff record. Reader fallback profiles are never accepted.</p>
-      <button onClick={() => void signInStaffWithGoogle().catch((cause) => setMessage(cause instanceof Error ? cause.message : 'Sign-in failed.'))} className="mt-5 w-full bg-[#ff6321] px-4 py-3 text-sm font-bold"><LogIn className="mr-2 inline h-4 w-4" />Continue with Google</button>
-      {(message || error) && <p role="alert" className="mt-3 border border-red-400 bg-red-950/40 p-3 text-xs">{message || error}</p>}
+      <button onClick={() => void signIn()} className="mt-5 w-full bg-[#ff6321] px-4 py-3 text-sm font-bold"><LogIn className="mr-2 inline h-4 w-4" />Continue with Google</button>
+      {(message || error || phaseMessage) && <p role="alert" className="mt-3 border border-red-400 bg-red-950/40 p-3 text-xs">{message || error || phaseMessage}</p>}
       <Link to="/books" className="mt-4 block text-center text-xs font-bold text-gray-300">Return to Book Store</Link>
     </section>
   </div>;

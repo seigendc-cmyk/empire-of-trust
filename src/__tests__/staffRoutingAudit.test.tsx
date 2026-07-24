@@ -117,6 +117,27 @@ describe('staff portal routing and authorization', () => {
   it('7. suspended staff denied', async () => expect((await render(<GuardHarness authState={state({phase:'suspended'})}/>)).textContent).toContain('SUSPENDED'));
   it('8. permission guard', async () => expect((await render(<GuardHarness permission="series.view" authState={state({staffUser:{...staff,permissions:[]}})}/>)).textContent).toContain('FORBIDDEN'));
   it('9. series assignment guard', async () => expect((await render(<GuardHarness permission="series.view" authState={state({staffUser:{...staff,assignedSeriesIds:[]}})}/>)).textContent).toContain('FORBIDDEN'));
+  it('9a. active staff without books.view is forbidden from Book Builder', async () => {
+    const withoutBooks = {
+      ...staff,
+      permissions: staff.permissions.filter((permission) => permission !== 'books.view'),
+    };
+    const view = await render(
+      <StaffAuthContext.Provider value={state({ staffUser: withoutBooks })}>
+        <MemoryRouter initialEntries={['/staff/books']}>
+          <Routes>
+            <Route path="/staff/forbidden" element={<div>FORBIDDEN</div>} />
+            <Route
+              path="/staff/books"
+              element={<RequirePermission permission="books.view"><div>BOOK BUILDER</div></RequirePermission>}
+            />
+          </Routes>
+        </MemoryRouter>
+      </StaffAuthContext.Provider>
+    );
+    expect(view.textContent).toContain('FORBIDDEN');
+    expect(view.textContent).not.toContain('BOOK BUILDER');
+  });
   it('10. direct route refresh', async () => expect((await render(app('/books/book-1'))).textContent).toContain('PUBLIC BOOKS'));
   it('11. public books route', async () => expect((await render(app('/books'))).textContent).toContain('PUBLIC BOOKS'));
   it('12. public series route', async () => expect((await render(app('/series'))).textContent).toContain('PUBLIC SERIES'));

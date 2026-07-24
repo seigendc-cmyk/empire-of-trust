@@ -70,7 +70,11 @@ async function dispatch(
 }
 
 describe('service worker fetch safety', () => {
-  it('settles a failed same-origin navigation with the cached SPA shell', async () => {
+  it.each([
+    '/staff/login',
+    '/staff/books',
+    '/staff/series',
+  ])('settles a failed navigation to %s with the cached SPA shell', async (path) => {
     const cached = new Response('cached shell', { status: 200 });
     const { fetchHandler } = serviceWorkerHarness({
       fetchError: new Error('offline'),
@@ -78,7 +82,7 @@ describe('service worker fetch safety', () => {
     });
     const response = await dispatch(fetchHandler, {
       method: 'GET',
-      url: 'https://preview.example/staff/login',
+      url: `https://preview.example${path}`,
       mode: 'navigate',
     });
     expect(response).toBe(cached);

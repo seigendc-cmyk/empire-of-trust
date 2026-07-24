@@ -7,7 +7,7 @@ import { exportStaffAuditLogs, listStaffAuditLogs } from '../../lib/staffAudit';
 import type { StaffAuditFilters, StaffAuditLog } from '../../types/staff';
 
 export const StaffLoginPage: React.FC = () => {
-  const { phase, error } = useStaffAuth();
+  const { phase, error, refresh } = useStaffAuth();
   const location = useLocation();
   const [message, setMessage] = useState('');
   const destination = (location.state as { from?: string } | null)?.from || '/staff';
@@ -29,6 +29,10 @@ export const StaffLoginPage: React.FC = () => {
       setMessage(getStaffAuthErrorMessage(cause));
     }
   };
+  const retryVerification = async () => {
+    setMessage('');
+    await refresh();
+  };
   return <div className="grid min-h-screen place-items-center bg-[#202428] p-4 text-white">
     <section className="w-full max-w-md border border-white/15 bg-[#292e33] p-7">
       <p className="text-xs font-extrabold uppercase text-[#ff8b59]">Protected staff portal</p>
@@ -36,6 +40,7 @@ export const StaffLoginPage: React.FC = () => {
       <p className="mt-2 text-sm text-gray-300">Use a genuine Firebase Google account with an active staff record. Reader fallback profiles are never accepted.</p>
       <button onClick={() => void signIn()} className="mt-5 w-full bg-[#ff6321] px-4 py-3 text-sm font-bold"><LogIn className="mr-2 inline h-4 w-4" />Continue with Google</button>
       {(message || error || phaseMessage) && <p role="alert" className="mt-3 border border-red-400 bg-red-950/40 p-3 text-xs">{message || error || phaseMessage}</p>}
+      {phase === 'error' && <button onClick={() => void retryVerification()} className="mt-3 w-full border border-white/30 px-4 py-2 text-xs font-bold">Retry staff verification</button>}
       <Link to="/books" className="mt-4 block text-center text-xs font-bold text-gray-300">Return to Book Store</Link>
     </section>
   </div>;
@@ -51,6 +56,49 @@ export const StatusPage: React.FC<{ title: string; message: string }> = ({ title
     </section>
   </div>
 );
+
+export const StaffAuthErrorPage: React.FC = () => {
+  const { error, phase, refresh } = useStaffAuth();
+  const location = useLocation();
+  const [retrying, setRetrying] = useState(false);
+  const destination = (location.state as { from?: string } | null)?.from || '/staff';
+  if (phase === 'authorized') return <Navigate to={destination} replace />;
+  if (phase === 'unauthenticated') {
+    return <Navigate to="/staff/login" replace state={{ from: destination }} />;
+  }
+  if (phase === 'suspended') return <Navigate to="/staff/suspended" replace />;
+  if (['non-staff', 'invited', 'disabled'].includes(phase)) {
+    return <Navigate to="/access-denied" replace />;
+  }
+  const retry = async () => {
+    setRetrying(true);
+    try {
+      await refresh();
+    } finally {
+      setRetrying(false);
+    }
+  };
+  return (
+    <div className="grid min-h-[65vh] place-items-center p-5">
+      <section className="max-w-lg border bg-white p-8 text-center">
+        <ShieldX className="mx-auto h-9 w-9 text-[#ff6321]" />
+        <h1 className="mt-3 text-xl font-extrabold">Staff verification unavailable</h1>
+        <p role="alert" className="mt-2 text-sm text-[#666]">
+          {error || 'The app could not verify this staff account.'}
+        </p>
+        <button
+          onClick={() => void retry()}
+          disabled={retrying}
+          className="mt-5 bg-[#24282c] px-4 py-2 text-xs font-bold text-white disabled:opacity-60"
+        >
+          <RefreshCw className={`mr-1 inline h-4 w-4 ${retrying ? 'animate-spin' : ''}`} />
+          {retrying ? 'Retrying…' : 'Retry staff verification'}
+        </button>
+        <Link to="/books" className="mt-3 block text-xs font-bold">Return to Book Store</Link>
+      </section>
+    </div>
+  );
+};
 
 export const StaffDashboardPage: React.FC = () => {
   const { staffUser } = useStaffAuth();

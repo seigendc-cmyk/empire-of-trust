@@ -13,6 +13,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "verify:wasm": "node scripts/verify-wasm.mjs",
+    "bootstrap:staff-admin": "node scripts/bootstrapStaffAdmin.mjs",
     "datapack:generate-keys": "tsx scripts/generate-keys.ts",
     "datapack:sign": "tsx scripts/sign-datapack.ts",
     "check": "npm run typecheck && npm test && npm run build && npm run verify:wasm"
@@ -44,6 +45,7 @@
     "@vitest/coverage-v8": "^4.1.10",
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.25.0",
+    "firebase-admin": "^14.2.0",
     "jsdom": "^29.1.1",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",

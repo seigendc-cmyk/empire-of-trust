@@ -16,6 +16,9 @@ export const RequireStaff: React.FC = () => {
   if (phase === 'unauthenticated') {
     return <Navigate to="/staff/login" replace state={{ from: location.pathname }} />;
   }
+  if (phase === 'error') {
+    return <Navigate to="/staff/auth-error" replace state={{ from: location.pathname }} />;
+  }
   if (phase === 'suspended') return <Navigate to="/staff/suspended" replace />;
   if (phase !== 'authorized') return <Navigate to="/access-denied" replace />;
   return <Outlet />;

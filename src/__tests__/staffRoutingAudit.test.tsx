@@ -65,6 +65,7 @@ const GuardHarness: React.FC<{ authState: StaffAuthState; permission?: 'series.v
     <MemoryRouter initialEntries={['/staff/series/series-1']}>
       <Routes>
         <Route path="/staff/login" element={<div>STAFF LOGIN</div>} />
+        <Route path="/staff/auth-error" element={<div>AUTH ERROR</div>} />
         <Route path="/access-denied" element={<div>ACCESS DENIED</div>} />
         <Route path="/staff/suspended" element={<div>SUSPENDED</div>} />
         <Route path="/staff/forbidden" element={<div>FORBIDDEN</div>} />
@@ -115,6 +116,28 @@ describe('staff portal routing and authorization', () => {
   it('5. authenticated non-staff denied', async () => expect((await render(<GuardHarness authState={state({phase:'non-staff',staffUser:null})}/>)).textContent).toContain('ACCESS DENIED'));
   it('6. active staff allowed', async () => expect((await render(<GuardHarness authState={state()}/>)).textContent).toContain('ALLOWED'));
   it('7. suspended staff denied', async () => expect((await render(<GuardHarness authState={state({phase:'suspended'})}/>)).textContent).toContain('SUSPENDED'));
+  it('7a. disabled staff is blocked', async () => expect((await render(<GuardHarness authState={state({phase:'disabled'})}/>)).textContent).toContain('ACCESS DENIED'));
+  it('7b. invited staff is blocked', async () => expect((await render(<GuardHarness authState={state({phase:'invited'})}/>)).textContent).toContain('ACCESS DENIED'));
+  it('7c. genuine verification failures show a retryable safe state', async () => {
+    const refresh = vi.fn(async () => undefined);
+    const view = await render(app('/staff/books', state({
+      phase: 'error',
+      staffUser: null,
+      error: 'The staff authorization service is temporarily unavailable. Check your connection and try again.',
+      refresh,
+    })));
+    expect(view.textContent).toContain('Staff verification unavailable');
+    const retry = Array.from(view.querySelectorAll('button'))
+      .find((button) => button.textContent?.includes('Retry staff verification'));
+    expect(retry).toBeDefined();
+    await act(async () => retry?.click());
+    expect(refresh).toHaveBeenCalledOnce();
+  });
+  it('7d. a completed retry leaves the error route', async () => {
+    const view = await render(app('/staff/auth-error', state()));
+    expect(view.textContent).toContain('Welcome, Staff One');
+    expect(view.textContent).not.toContain('Staff verification unavailable');
+  });
   it('8. permission guard', async () => expect((await render(<GuardHarness permission="series.view" authState={state({staffUser:{...staff,permissions:[]}})}/>)).textContent).toContain('FORBIDDEN'));
   it('9. series assignment guard', async () => expect((await render(<GuardHarness permission="series.view" authState={state({staffUser:{...staff,assignedSeriesIds:[]}})}/>)).textContent).toContain('FORBIDDEN'));
   it('9a. active staff without books.view is forbidden from Book Builder', async () => {

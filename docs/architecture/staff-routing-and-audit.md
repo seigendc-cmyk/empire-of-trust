@@ -11,7 +11,7 @@ React Router owns navigation and Firebase Hosting rewrites every navigation to
 | Reader | `/my-library` |
 | Staff entry | `/staff/login` |
 | Protected staff | `/staff`, `/staff/books`, `/staff/books/:bookId`, `/staff/series`, `/staff/series/:seriesId`, `/staff/series/:seriesId/production`, `/staff/payments`, `/staff/publishing`, `/staff/audit-log`, `/staff/team` |
-| Guard outcomes | `/access-denied`, `/staff/suspended`, `/staff/forbidden` |
+| Guard outcomes | `/access-denied`, `/staff/auth-error`, `/staff/suspended`, `/staff/forbidden` |
 
 The public layout contains only Book Store, Series, My Library, Install App and
 Reader Login. The reader layout contains only reader-facing controls. Studio
@@ -30,6 +30,8 @@ and browser-fallback identifiers, then reads exactly
 - unauthenticated: redirect to `/staff/login`;
 - authenticated without a valid staff record: `/access-denied`;
 - suspended staff: `/staff/suspended`;
+- invited or disabled staff: `/access-denied`;
+- verification transport/rules failure: `/staff/auth-error`, with a retry action;
 - active staff: continue to permission and assignment checks.
 
 `RequirePermission` checks the permissions in the active record.
@@ -48,6 +50,48 @@ delete it—including their own roles. Invitations and role changes must be
 administrator-authorized server operations.
 
 ### First-administrator bootstrap
+
+The repository provides `scripts/bootstrapStaffAdmin.mjs`, an Admin SDK utility
+that writes to the named Firestore database. It never runs in the browser and
+does not contain credentials.
+
+Prerequisites:
+
+1. Sign in once through `/staff/login` so Firebase Authentication creates the
+   genuine Google-backed user.
+2. In Firebase Console, open **Authentication > Users** and copy that user's
+   exact Firebase UID.
+3. Authenticate the local Admin SDK with Application Default Credentials:
+
+   ```powershell
+   gcloud auth application-default login
+   ```
+
+   Alternatively, store a service-account JSON file outside this repository
+   and point the standard environment variable to it:
+
+   ```powershell
+   $env:GOOGLE_APPLICATION_CREDENTIALS = 'C:\secure\firebase-admin.json'
+   ```
+
+4. Run the utility with reviewed identity values:
+
+   ```powershell
+   npm run bootstrap:staff-admin -- --uid '<firebase-auth-uid>' --email 'admin@example.com' --display-name 'Administrator' --project gen-lang-client-0459000055
+   ```
+
+The database defaults to
+`ai-studio-57118877-ceb5-4cf7-9e31-c5f548597a37`; use `--database` only when an
+administrator intentionally selects another database. The utility creates
+`staffUsers/{uid}`, where the document ID and `uid` field both equal the
+Firebase UID. It writes `status: active`, role `administrator`, permissions
+`staff.portal.view`, `books.view`, `books.edit`, `series.view`, `series.edit`,
+`payments.review`, `publishing.manage`, `audit.view`, and `team.view`, empty
+assignment arrays, and Admin SDK timestamps for `createdAt` and `lastLoginAt`.
+
+Existing records are refused by default. `--force` replaces an existing record,
+so use it only after inspecting and backing up that document. Never commit the
+service-account file or expose Admin SDK credentials to the web application.
 
 The first administrator must be bootstrapped outside the browser. The safest
 one-time path is the Firebase Console:
@@ -71,11 +115,9 @@ one-time path is the Firebase Console:
      arrays initially;
    - `createdAt`, `lastLoginAt`: Firestore timestamps.
 
-Do not place Admin SDK credentials in the web application, and do not add a
-client-side staff-record creation path. A repeatable bootstrap utility, if
-needed later, must use Firebase Admin SDK with Application Default Credentials
-or an environment-provided service account and must refuse overwrites unless an
-explicit force flag is supplied.
+The console steps are a manual fallback. Prefer the reviewed utility for a
+repeatable write. Do not place Admin SDK credentials in the web application or
+add a client-side staff-record creation path.
 
 ### Preview authorization diagnosis
 
@@ -91,6 +133,13 @@ Validate locally without deploying:
 
 ```powershell
 npx -y firebase-tools@latest deploy --only firestore:rules --dry-run --project gen-lang-client-0459000055
+```
+
+Before a later rules deployment, confirm the selected project:
+
+```powershell
+npx -y firebase-tools@latest use
+Get-Content .firebaserc
 ```
 
 After review, an administrator can deploy only the rules (never as part of this

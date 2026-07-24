@@ -19,7 +19,7 @@ import {
   BookBuilderRoute, InteractiveProductionRoute, SeriesStudioRoute,
 } from './components/routing/StudioRoutes';
 import {
-  StaffAuditLogPage, StaffDashboardPage, StaffLoginPage, StaffPlaceholderPage,
+  StaffAuditLogPage, StaffAuthErrorPage, StaffDashboardPage, StaffLoginPage, StaffPlaceholderPage,
   StatusPage,
 } from './components/staff/StaffPages';
 import { useStaffAuth } from './contexts/StaffAuthContext';
@@ -119,6 +119,7 @@ export const AppRoutes: React.FC<AppRoutesProps> = ({
     </Route>
 
     <Route path="/staff/login" element={<StaffLoginPage />} />
+    <Route path="/staff/auth-error" element={<StaffAuthErrorPage />} />
     <Route path="/access-denied" element={<StatusPage title="Access denied" message="This Firebase account does not have an active staff record." />} />
     <Route path="/staff/suspended" element={<StatusPage title="Staff account suspended" message="Contact an administrator to restore staff access." />} />
     <Route path="/staff/forbidden" element={<StatusPage title="Permission required" message="Your staff record does not grant access to this workspace." />} />

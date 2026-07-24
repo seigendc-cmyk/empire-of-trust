@@ -19,6 +19,7 @@ vi.mock('../components/routing/StudioRoutes', () => ({
 }));
 vi.mock('../components/staff/StaffPages', () => ({
   StaffLoginPage: () => <div>STAFF LOGIN</div>,
+  StaffAuthErrorPage: () => <div>STAFF AUTH ERROR</div>,
   StaffDashboardPage: () => <div>STAFF DASHBOARD</div>,
   StaffAuditLogPage: () => <div>STAFF AUDIT LOG</div>,
   StaffPlaceholderPage: ({ title }: { title: string }) => <div>{title}</div>,

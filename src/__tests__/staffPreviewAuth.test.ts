@@ -106,6 +106,28 @@ describe('staff preview authorization diagnostics', () => {
     expect(mocks.getDoc).not.toHaveBeenCalled();
   });
 
+  it('rejects anonymous identities before Firestore access', async () => {
+    const anonymous = {
+      ...firebaseUser,
+      uid: 'anonymous-1',
+      isAnonymous: true,
+    } as User;
+    await expect(getStaffUser(anonymous)).resolves.toBeNull();
+    expect(mocks.getDoc).not.toHaveBeenCalled();
+  });
+
+  it('classifies a Firestore network failure as retryable without exposing internals', async () => {
+    mocks.getDoc.mockRejectedValue({
+      code: 'unavailable',
+      message: 'internal transport detail',
+    });
+    const failure = await getStaffUser(firebaseUser).catch((cause: unknown) => cause);
+    expect(failure).toMatchObject({ code: 'staff/network-error' });
+    const message = getStaffAuthErrorMessage(failure);
+    expect(message).toContain('try again');
+    expect(message).not.toContain('internal transport detail');
+  });
+
   it.each([
     ['auth/popup-blocked', 'blocked'],
     ['auth/popup-closed-by-user', 'cancelled'],

@@ -3,6 +3,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
     // Assumed data model:
     // staffUsers/{uid}: private staff PII, status, roles, permissions and assignments.
+    // staffAccessRequests/{uid}: private candidate PII and server-controlled review state.
     // staffAuditLogs/{id}: server-timestamped, append-only staff activity records.
     // publicBooks/{id}: published public-safe metadata projection only.
     // publicSeries/{seriesId}: public-safe title/description/pricing/status only.
@@ -267,6 +268,12 @@ service cloud.firestore {
       allow write: if false;
     }
     match /staffUsers/{uid} {
+      allow read: if isOwner(uid);
+      allow create, update, delete: if false;
+    }
+    match /staffAccessRequests/{uid} {
+      // Candidates can inspect only their own request. All writes and administrator
+      // queue operations use the verified-token Admin SDK API.
       allow read: if isOwner(uid);
       allow create, update, delete: if false;
     }

@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   Activity, BookOpen, Boxes, CreditCard, FileUp, LayoutDashboard,
-  LogOut, Rows3, Users,
+  LogOut, Rows3, UserCheck, Users,
 } from 'lucide-react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useStaffAuth } from '../../contexts/StaffAuthContext';
@@ -34,6 +34,11 @@ export const StaffLayout: React.FC = () => {
               `flex items-center gap-2 px-3 py-2 text-xs font-bold ${isActive ? 'bg-[#ff6321]' : 'hover:bg-white/10'}`
             }><Icon className="h-4 w-4" />{label}</NavLink>
           ))}
+          {staffUser?.permissions.some((permission) => permission === 'team.approve' || permission === 'team.manage') && (
+            <NavLink to="/staff/team/requests" className={({ isActive }) =>
+              `flex items-center gap-2 px-3 py-2 text-xs font-bold ${isActive ? 'bg-[#ff6321]' : 'hover:bg-white/10'}`
+            }><UserCheck className="h-4 w-4" />Access Requests</NavLink>
+          )}
           <button onClick={() => void signOutStaff().then(() => navigate('/staff/login'))} className="mt-3 flex items-center gap-2 border-t border-white/15 px-3 py-3 text-left text-xs font-bold"><LogOut className="h-4 w-4" />Sign Out</button>
         </nav>
       </aside>

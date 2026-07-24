@@ -16,6 +16,8 @@ describe('staff administrator bootstrap utility', () => {
     expect(result.stdout).toContain('--display-name "<display name>"');
     expect(result.stdout).toContain('Application Default Credentials');
     expect(result.stdout).toContain('--force');
+    expect(result.stdout).toContain('--add-missing-permissions');
+    expect(result.stdout).toContain('--check-permissions');
   });
 
   it('rejects missing required identity arguments before using credentials', () => {
@@ -43,10 +45,13 @@ describe('staff administrator bootstrap utility', () => {
       'publishing.manage',
       'audit.view',
       'team.view',
+      'team.manage',
+      'team.approve',
     ]) {
       expect(source).toContain(`'${permission}'`);
     }
     expect(source).not.toContain('private_key');
     expect(source).not.toContain('access_token');
+    expect(source).toContain('FieldValue.arrayUnion(...ADMIN_PERMISSIONS)');
   });
 });

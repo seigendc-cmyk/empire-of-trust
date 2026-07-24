@@ -152,7 +152,14 @@ async function recordAuthEvent(action: 'login' | 'logout' | 'login-failure', det
 export async function signInStaffWithGoogle(): Promise<User> {
   try {
     const result = await signInWithPopup(auth, provider);
-    if (result.user.isAnonymous) throw new Error('Anonymous identities cannot access staff routes.');
+    if (
+      result.user.isAnonymous ||
+      isBrowserFallbackIdentity(result.user.uid) ||
+      !result.user.providerData.some((identity) => identity.providerId === 'google.com')
+    ) {
+      await signOut(auth);
+      throw new Error('A genuine Firebase Google identity is required for staff access.');
+    }
     await recordAuthEvent('login', {
       uid: result.user.uid,
       email: result.user.email || undefined,

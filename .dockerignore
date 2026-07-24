@@ -1,0 +1,9 @@
+.git
+.firebase
+.env
+.env.*
+!.env.example
+dist
+node_modules
+keys
+*.log

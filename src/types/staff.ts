@@ -13,7 +13,41 @@ export type StaffPermission =
   | 'publishing.manage'
   | 'audit.view'
   | 'audit.export'
-  | 'team.view';
+  | 'team.view'
+  | 'team.manage'
+  | 'team.approve';
+
+export type StaffAccessRequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
+
+export interface StaffAccessRequest {
+  uid: string;
+  email: string;
+  displayName: string;
+  photoURL: string | null;
+  requestedRole: string;
+  reason: string;
+  status: StaffAccessRequestStatus;
+  requestedAt: unknown;
+  updatedAt: unknown;
+  reviewedAt: unknown | null;
+  reviewedBy: string | null;
+  reviewerName: string | null;
+  reviewerNotes: string;
+  approvedRoles: string[];
+  approvedPermissions: StaffPermission[];
+  assignedSeriesIds: string[];
+  assignedSeasonIds: string[];
+  assignedEpisodeIds: string[];
+}
+
+export interface StaffAccessApproval {
+  roles: string[];
+  permissions: StaffPermission[];
+  assignedSeriesIds: string[];
+  assignedSeasonIds: string[];
+  assignedEpisodeIds: string[];
+  reviewerNotes?: string;
+}
 
 export interface StaffUser {
   uid: string;

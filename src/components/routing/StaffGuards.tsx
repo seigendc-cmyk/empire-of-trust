@@ -20,8 +20,24 @@ export const RequireStaff: React.FC = () => {
     return <Navigate to="/staff/auth-error" replace state={{ from: location.pathname }} />;
   }
   if (phase === 'suspended') return <Navigate to="/staff/suspended" replace />;
+  if (phase === 'request-needed') return <Navigate to="/staff/request-access" replace />;
+  if (phase === 'pending') return <Navigate to="/staff/pending" replace />;
+  if (phase === 'rejected') return <Navigate to="/staff/access-rejected" replace />;
   if (phase !== 'authorized') return <Navigate to="/access-denied" replace />;
   return <Outlet />;
+};
+
+export const RequireAnyPermission: React.FC<{
+  permissions: StaffPermission[];
+  children?: React.ReactNode;
+}> = ({ permissions, children }) => {
+  const { phase, staffUser } = useStaffAuth();
+  if (phase === 'loading') return <Resolving />;
+  if (phase !== 'authorized' || !staffUser) return <Navigate to="/access-denied" replace />;
+  if (!permissions.some((permission) => staffUser.permissions.includes(permission))) {
+    return <Navigate to="/staff/forbidden" replace />;
+  }
+  return children ? <>{children}</> : <Outlet />;
 };
 
 export const RequirePermission: React.FC<{

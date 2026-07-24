@@ -13,14 +13,15 @@ import { ReaderShell } from './components/reader/ReaderShell';
 import { GoogleAuthModal } from './components/auth/GoogleAuthModal';
 import { PWAInstallPrompt } from './components/pwa/PWAInstallPrompt';
 import {
-  RequirePermission, RequireSeriesAssignment, RequireStaff,
+  RequireAnyPermission, RequirePermission, RequireSeriesAssignment, RequireStaff,
 } from './components/routing/StaffGuards';
 import {
   BookBuilderRoute, InteractiveProductionRoute, SeriesStudioRoute,
 } from './components/routing/StudioRoutes';
 import {
-  StaffAuditLogPage, StaffAuthErrorPage, StaffDashboardPage, StaffLoginPage, StaffPlaceholderPage,
-  StatusPage,
+  StaffAccessRejectedPage, StaffAccessRequestsPage, StaffAuditLogPage, StaffAuthErrorPage,
+  StaffDashboardPage, StaffLoginPage, StaffPendingPage, StaffPlaceholderPage,
+  StaffRequestAccessPage, StatusPage,
 } from './components/staff/StaffPages';
 import { useStaffAuth } from './contexts/StaffAuthContext';
 
@@ -120,6 +121,9 @@ export const AppRoutes: React.FC<AppRoutesProps> = ({
 
     <Route path="/staff/login" element={<StaffLoginPage />} />
     <Route path="/staff/auth-error" element={<StaffAuthErrorPage />} />
+    <Route path="/staff/request-access" element={<StaffRequestAccessPage />} />
+    <Route path="/staff/pending" element={<StaffPendingPage />} />
+    <Route path="/staff/access-rejected" element={<StaffAccessRejectedPage />} />
     <Route path="/access-denied" element={<StatusPage title="Access denied" message="This Firebase account does not have an active staff record." />} />
     <Route path="/staff/suspended" element={<StatusPage title="Staff account suspended" message="Contact an administrator to restore staff access." />} />
     <Route path="/staff/forbidden" element={<StatusPage title="Permission required" message="Your staff record does not grant access to this workspace." />} />
@@ -136,6 +140,7 @@ export const AppRoutes: React.FC<AppRoutesProps> = ({
         <Route path="/staff/publishing" element={<RequirePermission permission="publishing.manage"><StaffPlaceholderPage title="Publishing" description="Publish and unpublish safe public projections through audited server operations." /></RequirePermission>} />
         <Route path="/staff/audit-log" element={<RequirePermission permission="audit.view"><StaffAuditLogPage /></RequirePermission>} />
         <Route path="/staff/team" element={<RequirePermission permission="team.view"><StaffPlaceholderPage title="Team" description="Invite staff and manage roles through administrator-only server operations." /></RequirePermission>} />
+        <Route path="/staff/team/requests" element={<RequireAnyPermission permissions={['team.approve', 'team.manage']}><StaffAccessRequestsPage /></RequireAnyPermission>} />
       </Route>
     </Route>
     <Route path="*" element={<Navigate to="/books" replace />} />

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { applicationDefault, initializeApp } from 'firebase-admin/app';
-import { getFirestore, Timestamp } from 'firebase-admin/firestore';
+import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
 
 const repositoryConfig = JSON.parse(
   readFileSync(new URL('../firebase-applet-config.json', import.meta.url), 'utf8')
@@ -17,6 +17,8 @@ export const ADMIN_PERMISSIONS = Object.freeze([
   'publishing.manage',
   'audit.view',
   'team.view',
+  'team.manage',
+  'team.approve',
 ]);
 
 export const usage = `Usage:
@@ -26,7 +28,9 @@ export const usage = `Usage:
     --display-name "<display name>" \\
     [--project <firebase-project-id>] \\
     [--database <firestore-database-id>] \\
-    [--force]
+    [--force] \\
+    [--add-missing-permissions] \\
+    [--check-permissions]
 
 Authentication:
   Use Application Default Credentials, or set GOOGLE_APPLICATION_CREDENTIALS
@@ -34,7 +38,8 @@ Authentication:
 
 Safety:
   Existing staffUsers/{uid} documents are never overwritten unless --force is
-  supplied explicitly.`;
+  supplied explicitly. Use --add-missing-permissions to preserve every existing
+  field and add only missing permissions from the administrator permission set.`;
 
 const valueFlags = new Set([
   '--uid',
@@ -55,6 +60,8 @@ export function parseBootstrapArgs(argv) {
     databaseId: process.env.FIRESTORE_DATABASE_ID ||
       repositoryConfig.firestoreDatabaseId,
     force: false,
+    addMissingPermissions: false,
+    checkPermissions: false,
     help: false,
   };
 
@@ -62,6 +69,14 @@ export function parseBootstrapArgs(argv) {
     const flag = argv[index];
     if (flag === '--force') {
       result.force = true;
+      continue;
+    }
+    if (flag === '--add-missing-permissions') {
+      result.addMissingPermissions = true;
+      continue;
+    }
+    if (flag === '--check-permissions') {
+      result.checkPermissions = true;
       continue;
     }
     if (flag === '--help' || flag === '-h') {
@@ -84,17 +99,20 @@ export function parseBootstrapArgs(argv) {
   }
 
   if (result.help) return result;
+  if ([result.force, result.addMissingPermissions, result.checkPermissions].filter(Boolean).length > 1) {
+    throw new Error('--force, --add-missing-permissions, and --check-permissions are mutually exclusive.');
+  }
   if (!result.uid || result.uid.length > 128 || result.uid.includes('/')) {
     throw new Error('A valid --uid is required (1-128 characters, no slash).');
   }
-  if (
+  if (!result.checkPermissions && (
     !result.email ||
     result.email.length > 320 ||
     !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(result.email)
-  ) {
+  )) {
     throw new Error('A valid --email is required.');
   }
-  if (!result.displayName || result.displayName.length > 160) {
+  if (!result.checkPermissions && (!result.displayName || result.displayName.length > 160)) {
     throw new Error('A valid --display-name is required (1-160 characters).');
   }
   if (!result.projectId) throw new Error('A Firebase project ID is required.');
@@ -127,6 +145,39 @@ export async function bootstrapStaffAdmin(args) {
   const database = getFirestore(app, args.databaseId);
   const staffRef = database.collection('staffUsers').doc(args.uid);
   const existing = await staffRef.get();
+  if (args.checkPermissions) {
+    const data = existing.data();
+    const permissions = Array.isArray(data?.permissions) ? data.permissions : [];
+    return {
+      projectId: args.projectId,
+      databaseId: args.databaseId,
+      documentPath: staffRef.path,
+      overwritten: false,
+      permissionsAddedSafely: false,
+      checkedOnly: true,
+      exists: existing.exists,
+      status: data?.status || null,
+      roles: Array.isArray(data?.roles) ? data.roles : [],
+      missingPermissions: ADMIN_PERMISSIONS.filter((permission) => !permissions.includes(permission)),
+    };
+  }
+  if (existing.exists && args.addMissingPermissions) {
+    const existingData = existing.data();
+    if (existingData?.uid !== args.uid || existingData?.status !== 'active') {
+      throw new Error('Permission maintenance requires a matching active staff record.');
+    }
+    await staffRef.update({
+      permissions: FieldValue.arrayUnion(...ADMIN_PERMISSIONS),
+    });
+    return {
+      projectId: args.projectId,
+      databaseId: args.databaseId,
+      documentPath: staffRef.path,
+      overwritten: false,
+      permissionsAddedSafely: true,
+      checkedOnly: false,
+    };
+  }
   if (existing.exists && !args.force) {
     throw new Error(
       `staffUsers/${args.uid} already exists; rerun with --force only after review.`
@@ -146,6 +197,8 @@ export async function bootstrapStaffAdmin(args) {
     databaseId: args.databaseId,
     documentPath: staffRef.path,
     overwritten: existing.exists,
+    permissionsAddedSafely: false,
+    checkedOnly: false,
   };
 }
 
@@ -162,6 +215,13 @@ async function main() {
     console.log(`Database: ${summary.databaseId}`);
     console.log(`Document: ${summary.documentPath}`);
     console.log(`Existing record overwritten: ${summary.overwritten ? 'yes' : 'no'}`);
+    console.log(`Missing permissions added safely: ${summary.permissionsAddedSafely ? 'yes' : 'no'}`);
+    if (summary.checkedOnly) {
+      console.log(`Record exists: ${summary.exists ? 'yes' : 'no'}`);
+      console.log(`Status: ${summary.status || 'missing'}`);
+      console.log(`Roles: ${summary.roles.join(', ') || 'none'}`);
+      console.log(`Missing permissions: ${summary.missingPermissions.join(', ') || 'none'}`);
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown bootstrap failure.';
     console.error(`Staff administrator bootstrap failed: ${message}`);

@@ -61,7 +61,11 @@
       "name": "Book Studio",
       "short_name": "Studio",
       "description": "Create, edit and manage book publishing projects",
+<<<<<<< HEAD
+      "url": "/staff",
+=======
       "url": "/staff/books",
+>>>>>>> origin/main
       "icons": [
         {
           "src": "/shortcut-studio.png",

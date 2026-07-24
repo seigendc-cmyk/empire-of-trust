@@ -19,6 +19,7 @@ import {
   deleteDoc
 } from 'firebase/firestore';
 import { Book } from '../types';
+import { projectPublicBook } from './publicBookProjection';
 
 // Load config from firebase-applet-config.json
 import config from '../../firebase-applet-config.json';
@@ -159,16 +160,33 @@ export async function logoutUser(): Promise<void> {
  * Publish Book to Firestore Database
  */
 export async function publishBookToFirestore(book: Book): Promise<void> {
-  const path = `books/${book.id}`;
+  const path = `publicBooks/${book.id}`;
   try {
-    const bookRef = doc(db, 'books', book.id);
-    await setDoc(bookRef, {
-      ...book,
-      isPublished: true,
-      publishedAt: new Date().toISOString(),
-      chaptersCount: book.chapters.length,
-      referencesCount: book.references.length,
+    if (!auth.currentUser) throw new Error('Genuine Firebase authentication is required.');
+    const publicBook = projectPublicBook(book);
+    const response = await fetch('/api/staff/publish-book', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${await auth.currentUser.getIdToken()}`,
+      },
+      body: JSON.stringify({
+        publicBook,
+        audit: {
+          action: 'book.publish',
+          entityType: 'book',
+          entityId: book.id,
+          hierarchy: { bookId: book.id },
+          changedFields: ['isPublished', 'publishedAt'],
+          before: { isPublished: book.isPublished, publishedAt: book.publishedAt || null },
+          after: { isPublished: true, publishedAt: publicBook.publishedAt },
+          reason: 'Published from Staff Studio',
+          source: 'staff-web',
+        },
+      }),
     });
+    if (!response.ok) throw new Error('The audited publishing service rejected the request.');
   } catch (err) {
     console.error('Error publishing book to Firestore:', err);
     handleFirestoreError(err, OperationType.WRITE, path);
@@ -180,8 +198,8 @@ export async function publishBookToFirestore(book: Book): Promise<void> {
  */
 export async function fetchPublishedBooksFromFirestore(): Promise<Book[]> {
   try {
-    const booksCol = collection(db, 'books');
-    const snapshot = await getDocs(booksCol);
+    const booksCol = collection(db, 'publicBooks');
+    const snapshot = await getDocs(query(booksCol, where('isPublished', '==', true)));
     const books: Book[] = [];
     snapshot.forEach((docSnap) => {
       const data = docSnap.data() as Book;
@@ -195,6 +213,7 @@ export async function fetchPublishedBooksFromFirestore(): Promise<Book[]> {
     return [];
   }
 }
+
 
 /**
  * Register or update user device & library in Firestore

@@ -34,10 +34,19 @@ import { DebouncedSaveQueue } from '../../lib/debouncedSave';
 interface BookStudioProps {
   user: ReaderProfile | null;
   onOpenAuth: () => void;
+<<<<<<< HEAD
+  initialMode?: 'books' | 'series';
+  initialBookId?: string;
+}
+
+export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth, initialMode = 'books', initialBookId }) => {
+  const [studioMode, setStudioMode] = useState<'books' | 'series'>(initialMode);
+=======
   initialBookId?: string;
 }
 
 export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth, initialBookId }) => {
+>>>>>>> origin/main
   const [books, setBooks] = useState<Book[]>([]);
   const [activeBookId, setActiveBookId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'content' | 'covers' | 'references' | 'publish' | 'marketing'>('content');

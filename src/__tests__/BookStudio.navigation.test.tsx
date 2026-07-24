@@ -258,15 +258,10 @@ describe('BookStudio workspace navigation', () => {
     }
   });
 
-  it('opens the full Series Book Studio page from Book Publishing Studio', async () => {
+  it('does not expose Series Studio inside the Book Builder route component', async () => {
     await renderStudio();
-    await act(async () => {
-      click('#studio-series-btn');
-      await Promise.resolve();
-    });
-
-    expect(container.textContent).toContain('Series Book Studio');
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.querySelector('#studio-series-btn')).toBeNull();
+    expect(container.textContent).not.toContain('Series Book Studio');
   });
 
   it('keeps destructive deletion blocked when flushing pending changes fails', async () => {

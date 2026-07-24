@@ -48,7 +48,7 @@
       "name": "Offline Mobile Reader",
       "short_name": "Reader",
       "description": "Open your local offline manuscript reader library",
-      "url": "/?view=reader",
+      "url": "/my-library",
       "icons": [
         {
           "src": "/shortcut-reader.png",
@@ -61,7 +61,7 @@
       "name": "Book Studio",
       "short_name": "Studio",
       "description": "Create, edit and manage book publishing projects",
-      "url": "/?view=studio",
+      "url": "/staff/books",
       "icons": [
         {
           "src": "/shortcut-studio.png",

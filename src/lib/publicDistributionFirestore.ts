@@ -1,8 +1,7 @@
 import {
-  collection, deleteDoc, doc, getDoc, getDocs, query, setDoc,
-  where, writeBatch,
+  collection, doc, getDoc, getDocs, query, where,
 } from 'firebase/firestore';
-import { auth, db, handleFirestoreError, OperationType } from './firebase';
+import { auth, db } from './firebase';
 import { getStorage, ref, uploadBytes } from 'firebase/storage';
 import type {
   PackageDownloadToken, PackageIssueRequest, ProofOfPayment, PublicSeries,
@@ -13,6 +12,44 @@ const assertAuthenticated = () => {
   if (!auth.currentUser) throw new Error('Firebase Authentication is required.');
   return auth.currentUser;
 };
+
+async function runAuditedPublishingOperation<T>(
+  action: string,
+  entityType: string,
+  entityId: string,
+  mutation: Record<string, unknown>,
+): Promise<T> {
+  const user = assertAuthenticated();
+  const response = await fetch('/api/staff/publishing', {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${await user.getIdToken()}`,
+    },
+    body: JSON.stringify({
+      mutation,
+      audit: {
+        action,
+        entityType,
+        entityId,
+        hierarchy: {
+          seriesId: mutation.seriesId,
+          seasonId: mutation.seasonId,
+          episodeId: mutation.episodeId,
+        },
+        changedFields: ['status'],
+        before: null,
+        after: mutation,
+        reason: 'Staff publishing action',
+        source: 'staff-web',
+      },
+    }),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.message || 'Audited publishing operation failed.');
+  return body as T;
+}
 
 export async function uploadProofOfPaymentReceipt(file: File): Promise<string> {
   const user = assertAuthenticated();
@@ -27,50 +64,46 @@ export async function uploadProofOfPaymentReceipt(file: File): Promise<string> {
 }
 
 export async function publishPublicSeriesBundle(bundle: PublicSeriesBundle): Promise<void> {
-  assertAuthenticated();
-  const batch = writeBatch(db);
-  batch.set(doc(db, 'publicSeries', bundle.series.id), bundle.series);
-  bundle.seasons.forEach((season) =>
-    batch.set(doc(db, 'publicSeries', bundle.series.id, 'seasons', season.id), season)
-  );
-  bundle.episodes.forEach((episode) =>
-    batch.set(doc(db, 'publicSeries', bundle.series.id, 'episodes', episode.id), episode)
-  );
-  try {
-    await batch.commit();
-  } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, `publicSeries/${bundle.series.id}`);
-  }
+  await runAuditedPublishingOperation('series.publish', 'series', bundle.series.id, {
+    operation: 'publish-series-bundle', seriesId: bundle.series.id, bundle,
+  });
 }
 
 export async function updatePublicSeries(series: PublicSeries): Promise<void> {
-  assertAuthenticated();
-  await setDoc(doc(db, 'publicSeries', series.id), series);
+  await runAuditedPublishingOperation('series.publish', 'series', series.id, {
+    operation: 'publish-series', seriesId: series.id, series,
+  });
 }
 
 export async function unpublishPublicSeries(seriesId: string): Promise<void> {
-  assertAuthenticated();
-  await deleteDoc(doc(db, 'publicSeries', seriesId));
+  await runAuditedPublishingOperation('series.unpublish', 'series', seriesId, {
+    operation: 'unpublish-series', seriesId,
+  });
 }
 
 export async function publishPublicSeason(season: PublicSeriesSeason): Promise<void> {
-  assertAuthenticated();
-  await setDoc(doc(db, 'publicSeries', season.seriesId, 'seasons', season.id), season);
+  await runAuditedPublishingOperation('season.publish', 'season', season.id, {
+    operation: 'publish-season', seriesId: season.seriesId, seasonId: season.id, season,
+  });
 }
 
 export async function unpublishPublicSeason(seriesId: string, seasonId: string): Promise<void> {
-  assertAuthenticated();
-  await deleteDoc(doc(db, 'publicSeries', seriesId, 'seasons', seasonId));
+  await runAuditedPublishingOperation('season.unpublish', 'season', seasonId, {
+    operation: 'unpublish-season', seriesId, seasonId,
+  });
 }
 
 export async function publishPublicEpisode(episode: PublicSeriesEpisode): Promise<void> {
-  assertAuthenticated();
-  await setDoc(doc(db, 'publicSeries', episode.seriesId, 'episodes', episode.id), episode);
+  await runAuditedPublishingOperation('episode.publish', 'episode', episode.id, {
+    operation: 'publish-episode', seriesId: episode.seriesId,
+    seasonId: episode.seasonId, episodeId: episode.id, episode,
+  });
 }
 
 export async function unpublishPublicEpisode(seriesId: string, episodeId: string): Promise<void> {
-  assertAuthenticated();
-  await deleteDoc(doc(db, 'publicSeries', seriesId, 'episodes', episodeId));
+  await runAuditedPublishingOperation('episode.unpublish', 'episode', episodeId, {
+    operation: 'unpublish-episode', seriesId, episodeId,
+  });
 }
 
 export async function fetchPublicSeriesCatalogue(): Promise<PublicSeries[]> {

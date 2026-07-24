@@ -2,6 +2,7 @@ import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import {BrowserRouter} from 'react-router-dom';
 import App from './App.tsx';
+import {StaffAuthProvider} from './contexts/StaffAuthContext';
 import { SQL_WASM_URL } from './lib/sqlite';
 import './index.css';
 import 'katex/dist/katex.min.css';
@@ -9,7 +10,9 @@ import 'katex/dist/katex.min.css';
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
-      <App />
+      <StaffAuthProvider>
+        <App />
+      </StaffAuthProvider>
     </BrowserRouter>
   </StrictMode>,
 );

@@ -1,7 +1,10 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Assumed model:
+    // Assumed data model:
+    // staffUsers/{uid}: private staff PII, status, roles, permissions and assignments.
+    // staffAuditLogs/{id}: server-timestamped, append-only staff activity records.
+    // publicBooks/{id}: published public-safe metadata projection only.
     // publicSeries/{seriesId}: public-safe title/description/pricing/status only.
     // publicSeries/{seriesId}/{seasons|episodes}/{id}: public-safe release metadata only.
     // proofsOfPayment/{id}: reader PII/payment evidence, owner-readable and service-reviewed.
@@ -20,15 +23,72 @@ service cloud.firestore {
     function isDocOwner() {
       return isAuthenticated() && resource.data.readerId == request.auth.uid;
     }
-    function uidUnchanged(uid) {
-      return request.resource.data.readerId == uid;
+    function uidUnchanged(data, uid) {
+      return data.readerId == uid;
     }
-    function uidNotModified() {
-      return request.resource.data.readerId == resource.data.readerId;
+    function uidNotModified(nextData, previousData) {
+      return nextData.readerId == previousData.readerId;
     }
     function isPublisher() {
-      return isAuthenticated() &&
-        (request.auth.token.admin == true || request.auth.token.publisher == true);
+      return hasStaffPermission('publishing.manage');
+    }
+    function staffPath() {
+      return /databases/$(database)/documents/staffUsers/$(request.auth.uid);
+    }
+    function hasActiveStaffRecord() {
+      return isAuthenticated() && exists(staffPath()) &&
+        get(staffPath()).data.uid == request.auth.uid &&
+        get(staffPath()).data.status == 'active';
+    }
+    function hasStaffPermission(permission) {
+      return hasActiveStaffRecord() &&
+        get(staffPath()).data.permissions is list &&
+        permission in get(staffPath()).data.permissions;
+    }
+    function isValidStaffUser(data, uid) {
+      return data.keys().hasOnly([
+        'uid','email','displayName','status','roles','permissions',
+        'assignedSeriesIds','assignedSeasonIds','assignedEpisodeIds',
+        'createdAt','createdBy','lastLoginAt'
+      ]) &&
+      data.keys().hasAll([
+        'uid','email','displayName','status','roles','permissions',
+        'assignedSeriesIds','assignedSeasonIds','assignedEpisodeIds',
+        'createdAt','createdBy','lastLoginAt'
+      ]) &&
+      data.uid == uid && shortString(data.uid, 128) &&
+      shortString(data.email, 320) && shortString(data.displayName, 160) &&
+      data.status in ['active','suspended','invited','disabled'] &&
+      data.roles is list && data.roles.size() <= 20 &&
+      data.permissions is list && data.permissions.size() <= 100 &&
+      data.assignedSeriesIds is list && data.assignedSeriesIds.size() <= 500 &&
+      data.assignedSeasonIds is list && data.assignedSeasonIds.size() <= 1000 &&
+      data.assignedEpisodeIds is list && data.assignedEpisodeIds.size() <= 5000 &&
+      data.createdAt is timestamp && shortString(data.createdBy, 128) &&
+      data.lastLoginAt is timestamp;
+    }
+    function isValidAuditLog(data) {
+      return data.keys().hasOnly([
+        'id','staffUid','staffDisplayName','action','entityType','entityId',
+        'hierarchy','changedFields','before','after','reason','sessionId',
+        'deviceId','timestamp','source'
+      ]) &&
+      data.keys().hasAll([
+        'id','staffUid','staffDisplayName','action','entityType','entityId',
+        'hierarchy','changedFields','reason','sessionId','deviceId','timestamp','source'
+      ]) &&
+      shortString(data.id, 128) && shortString(data.staffUid, 128) &&
+      shortString(data.staffDisplayName, 160) && shortString(data.action, 160) &&
+      shortString(data.entityType, 100) && shortString(data.entityId, 128) &&
+      data.hierarchy is map && data.hierarchy.size() <= 10 &&
+      data.changedFields is list && data.changedFields.size() <= 100 &&
+      (!('before' in data) || data.before == null ||
+        (data.before is map && data.before.size() <= 200)) &&
+      (!('after' in data) || data.after == null ||
+        (data.after is map && data.after.size() <= 200)) &&
+      shortString(data.reason, 2000) && shortString(data.sessionId, 128) &&
+      shortString(data.deviceId, 200) && data.timestamp is timestamp &&
+      data.source in ['staff-web','server','firebase-function'];
     }
     function shortString(value, max) {
       return value is string && value.size() <= max;
@@ -145,47 +205,47 @@ service cloud.firestore {
       shortString(data.updatedAt, 40);
     }
 
+    match /publicBooks/{bookId} {
+      allow read: if resource.data.isPublished == true;
+      allow create, update, delete: if false;
+    }
+
     match /publicSeries/{seriesId} {
       allow read: if resource.data.status == 'published';
-      allow create, update: if isPublisher() && validPublicSeries(request.resource.data);
-      allow delete: if isPublisher();
+      allow create, update, delete: if false;
 
       match /seasons/{seasonId} {
         allow read: if resource.data.status == 'published' &&
           exists(/databases/$(database)/documents/publicSeries/$(seriesId));
-        allow create, update: if isPublisher() && validPublicSeason(request.resource.data, seriesId);
-        allow delete: if isPublisher();
+        allow create, update, delete: if false;
       }
       match /episodes/{episodeId} {
         allow read: if resource.data.releaseStatus in ['locked','coming-soon','released'] &&
           exists(/databases/$(database)/documents/publicSeries/$(seriesId));
-        allow create, update: if isPublisher() && validPublicEpisode(request.resource.data, seriesId);
-        allow delete: if isPublisher();
+        allow create, update, delete: if false;
       }
     }
 
     match /proofsOfPayment/{paymentId} {
       allow create: if false; // /api/pop-submit enforces price, release state and replay protection.
-      allow read: if isDocOwner() || isPublisher();
-      allow update: if isPublisher() && uidUnchanged(resource.data.readerId) && uidNotModified() &&
-        validProofOfPayment(request.resource.data);
-      allow delete: if false;
+      allow read: if isDocOwner() || hasStaffPermission('payments.review');
+      allow update, delete: if false;
     }
 
     match /readerEntitlements/{entitlementId} {
-      allow read: if isDocOwner() || isPublisher();
+      allow read: if isDocOwner() || hasStaffPermission('payments.review');
       allow create, update, delete: if false;
     }
 
     match /issuedDataPacks/{packageId} {
-      allow read: if isDocOwner() || isPublisher();
+      allow read: if isDocOwner() || hasStaffPermission('publishing.manage');
       allow create, update, delete: if false;
     }
 
     match /books/{bookId} {
-      allow read, create, update, delete: if isPublisher();
+      allow read, create, update, delete: if false;
       match /{privateChild=**} {
-        allow read, write: if isPublisher();
+        allow read, write: if false;
       }
     }
 
@@ -199,12 +259,20 @@ service cloud.firestore {
       allow read, write: if false;
     }
     match /packageDownloadLogs/{logId} {
-      allow read: if isPublisher();
+      allow read: if hasStaffPermission('audit.view');
       allow write: if false;
     }
     match /publisherProfiles/{uid} {
-      allow read: if isOwner(uid) || isPublisher();
+      allow read: if isOwner(uid);
       allow write: if false;
+    }
+    match /staffUsers/{uid} {
+      allow read: if isOwner(uid);
+      allow create, update, delete: if false;
+    }
+    match /staffAuditLogs/{eventId} {
+      allow read: if hasStaffPermission('audit.view');
+      allow create, update, delete: if false;
     }
     match /{document=**} {
       allow read, write: if false;

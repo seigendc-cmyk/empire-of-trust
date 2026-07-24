@@ -4,8 +4,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
-import type { User } from 'firebase/auth';
-import { StaffRouteProvider } from '../contexts/StaffRouteContext';
+import { StaffAuthContext, type StaffAuthState } from '../contexts/StaffAuthContext';
+import type { StaffUser } from '../types/staff';
 
 vi.mock('../components/portal/PublicPortal', () => ({ PublicPortal: () => <div>PUBLIC BOOK STORE</div> }));
 vi.mock('../components/portal/PublicSeriesCatalogue', () => ({ PublicSeriesCatalogue: () => <div>PUBLIC SERIES</div> }));
@@ -13,39 +13,70 @@ vi.mock('../components/reader/ReaderShell', () => ({ ReaderShell: () => <div>OFF
 vi.mock('../components/auth/GoogleAuthModal', () => ({ GoogleAuthModal: () => null }));
 vi.mock('../components/pwa/PWAInstallPrompt', () => ({ PWAInstallPrompt: () => null }));
 vi.mock('../components/routing/StudioRoutes', () => ({
-  StaffLoginRoute: () => <div>STAFF LOGIN</div>,
-  StaffDashboardRoute: () => <div>STAFF DASHBOARD</div>,
   BookBuilderRoute: () => <div>BOOK BUILDER</div>,
   SeriesStudioRoute: () => <div>SERIES STUDIO</div>,
   InteractiveProductionRoute: () => <div>INTERACTIVE PRODUCTION CONSOLE</div>,
+}));
+vi.mock('../components/staff/StaffPages', () => ({
+  StaffLoginPage: () => <div>STAFF LOGIN</div>,
+  StaffDashboardPage: () => <div>STAFF DASHBOARD</div>,
+  StaffAuditLogPage: () => <div>STAFF AUDIT LOG</div>,
+  StaffPlaceholderPage: ({ title }: { title: string }) => <div>{title}</div>,
+  StatusPage: ({ title }: { title: string }) => <div>{title}</div>,
 }));
 
 import { AppRoutes } from '../App';
 
 let container: HTMLDivElement;
 let root: Root;
-const staffUser = { uid: 'staff-1', isAnonymous: false } as User;
+const staffUser: StaffUser = {
+  uid: 'staff-1',
+  email: 'staff@example.com',
+  displayName: 'Staff One',
+  status: 'active',
+  roles: ['editor'],
+  permissions: ['staff.portal.view', 'books.view', 'series.view', 'series.edit'],
+  assignedSeriesIds: ['series-42'],
+  assignedSeasonIds: [],
+  assignedEpisodeIds: [],
+  createdAt: {},
+  createdBy: 'admin',
+  lastLoginAt: {},
+};
+const authState = (authorized: boolean): StaffAuthState => authorized ? {
+  phase: 'authorized',
+  firebaseUser: { uid: staffUser.uid } as StaffAuthState['firebaseUser'],
+  staffUser,
+  error: null,
+  refresh: async () => undefined,
+} : {
+  phase: 'unauthenticated',
+  firebaseUser: null,
+  staffUser: null,
+  error: null,
+  refresh: async () => undefined,
+};
 
-async function renderPath(path: string, user: User | null = staffUser) {
+async function renderPath(path: string, authorized = true) {
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
   await act(async () => {
     root.render(
-      <StaffRouteProvider resolved user={user}>
+      <StaffAuthContext.Provider value={authState(authorized)}>
         <MemoryRouter initialEntries={[path]}>
           <AppRoutes
-            reader={null}
+            user={null}
             directReadBook={null}
             directPackJson={null}
+            isInstallable={false}
             isStandalone={false}
             onOpenReaderAuth={() => undefined}
             onOpenReaderWithBook={() => undefined}
-            onPromptInstall={() => undefined}
-            onStaffLogout={() => undefined}
+            onInstall={() => undefined}
           />
         </MemoryRouter>
-      </StaffRouteProvider>,
+      </StaffAuthContext.Provider>,
     );
     await Promise.resolve();
   });
@@ -63,15 +94,15 @@ afterEach(async () => {
 
 describe('separate public and protected Studio URLs', () => {
   it('redirects / to /books', async () => expect((await renderPath('/')).textContent).toContain('PUBLIC BOOK STORE'));
-  it('loads the public Book Store at /books', async () => expect((await renderPath('/books', null)).textContent).toContain('PUBLIC BOOK STORE'));
-  it('loads public Series at /series', async () => expect((await renderPath('/series', null)).textContent).toContain('PUBLIC SERIES'));
-  it('keeps the offline Reader at /my-library', async () => expect((await renderPath('/my-library', null)).textContent).toContain('OFFLINE MY LIBRARY'));
+  it('loads the public Book Store at /books', async () => expect((await renderPath('/books', false)).textContent).toContain('PUBLIC BOOK STORE'));
+  it('loads public Series at /series', async () => expect((await renderPath('/series', false)).textContent).toContain('PUBLIC SERIES'));
+  it('keeps the offline Reader at /my-library', async () => expect((await renderPath('/my-library', false)).textContent).toContain('OFFLINE MY LIBRARY'));
   it('does not show Studio navigation publicly', async () => {
-    const view = await renderPath('/books', null);
+    const view = await renderPath('/books', false);
     expect(view.textContent).not.toContain('Book Builder');
     expect(view.textContent).not.toContain('Series Production');
   });
-  it('redirects unauthenticated staff access to /staff/login', async () => expect((await renderPath('/staff', null)).textContent).toContain('STAFF LOGIN'));
+  it('redirects unauthenticated staff access to /staff/login', async () => expect((await renderPath('/staff', false)).textContent).toContain('STAFF LOGIN'));
   it('loads Book Builder only at /staff/books', async () => expect((await renderPath('/staff/books')).textContent).toContain('BOOK BUILDER'));
   it('restores a direct Book Builder URL on refresh', async () => expect((await renderPath('/staff/books/book-42')).textContent).toContain('BOOK BUILDER'));
   it('loads Series Studio only at /staff/series', async () => expect((await renderPath('/staff/series')).textContent).toContain('SERIES STUDIO'));

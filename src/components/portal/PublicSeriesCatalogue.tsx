@@ -11,12 +11,13 @@ import {
 import { getOrCreateDeviceId, hashBuffer } from '../../lib/dataPack';
 
 interface Props {
+  initialSeriesId?: string;
   readerId?: string;
   readerPhone?: string;
   onPackageDownloaded?: (file: File) => Promise<void>;
 }
 
-export const PublicSeriesCatalogue: React.FC<Props> = ({ readerId, readerPhone = '', onPackageDownloaded }) => {
+export const PublicSeriesCatalogue: React.FC<Props> = ({ initialSeriesId, readerId, readerPhone = '', onPackageDownloaded }) => {
   const [catalogue, setCatalogue] = useState<PublicSeries[]>([]);
   const [bundle, setBundle] = useState<PublicSeriesBundle>();
   const [seasonId, setSeasonId] = useState('');
@@ -31,6 +32,9 @@ export const PublicSeriesCatalogue: React.FC<Props> = ({ readerId, readerPhone =
 
   useEffect(() => {
     void fetchPublicSeriesCatalogue().then(setCatalogue).catch(() => setCatalogue([]));
+    if (initialSeriesId) {
+      void fetchPublicSeriesBundle(initialSeriesId).then((next) => next && setBundle(next));
+    }
     if (readerId) {
       void Promise.all([getMyProofsOfPayment(readerId), getMyEntitlements(readerId)])
         .then(([nextPayments, nextEntitlements]) => {
@@ -38,7 +42,7 @@ export const PublicSeriesCatalogue: React.FC<Props> = ({ readerId, readerPhone =
           setEntitlements(nextEntitlements);
         }).catch(() => undefined);
     }
-  }, [readerId]);
+  }, [initialSeriesId, readerId]);
 
   const filtered = useMemo(() => catalogue.filter((item) =>
     (category === 'ALL' || item.category === category) &&

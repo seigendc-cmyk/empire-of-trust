@@ -12,7 +12,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "check": "npm run typecheck && npm test && npm run build"
+    "verify:wasm": "node scripts/verify-wasm.mjs",
+    "datapack:generate-keys": "tsx scripts/generate-keys.ts",
+    "datapack:sign": "tsx scripts/sign-datapack.ts",
+    "check": "npm run typecheck && npm test && npm run build && npm run verify:wasm"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

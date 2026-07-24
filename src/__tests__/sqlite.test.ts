@@ -1,10 +1,11 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { webcrypto } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import initSqlJs, { Database, SqlJsStatic } from 'sql.js';
 import JSZip from 'jszip';
+import type { Book } from '../types';
 import {
   applyDatabaseMigrations,
   createLocalDatabaseBackup,
@@ -12,15 +13,52 @@ import {
   databaseMigrations,
   exportLocalDatabaseBackup,
   getDatabaseStartupStatus,
+  getAllLocalBooks,
+  getSQLiteEngineState,
+  getSqlJsLocateFile,
   getDatabaseUserVersion,
   getSQLiteDB,
+  retrySQLiteInitialization,
+  restoreDefaultSQLiteEngineInitializerForTesting,
   restoreLocalDatabaseBackup,
+  saveBookToSQLite,
+  setSQLiteEngineInitializerForTesting,
   setSQLiteDatabaseForTesting,
+  SQL_WASM_URL,
   SQLITE_BACKUP_FORMAT_VERSION,
   SQLITE_BACKUP_PRODUCT_NAME,
   SQLITE_STORAGE_KEYS,
   validateLocalDatabaseBackup,
 } from '../lib/sqlite';
+import {
+  calculateEpisodeReadiness,
+  convertLegacyBookSeries,
+  createEpisode,
+  createLinkedBookFromEpisode,
+  createSeason,
+  createSeriesProject,
+  createSeriesWithStructure,
+  deleteEpisode,
+  deleteSeason,
+  generateContinuityWarnings,
+  getAllSeriesProjects,
+  getEpisode,
+  getEpisodeChecklist,
+  getEpisodesForSeason,
+  getSeasonsForSeries,
+  getSeriesRelationships,
+  getStoryArcs,
+  getTimelineEvents,
+  linkEpisodeToBook,
+  reorderEpisodes,
+  reorderSeasons,
+  saveEpisodeChecklist,
+  saveSeriesRelationship,
+  saveStoryArc,
+  saveTimelineEvent,
+  unlinkEpisodeFromBook,
+  updateEpisode,
+} from '../lib/seriesRepository';
 
 const testDirectory = dirname(fileURLToPath(import.meta.url));
 const wasmBinary = readFileSync(join(testDirectory, '../../node_modules/sql.js/dist/sql-wasm.wasm'));
@@ -135,15 +173,407 @@ beforeEach(() => {
     wasmBinary.byteOffset,
     wasmBinary.byteOffset + wasmBinary.byteLength
   ) as ArrayBuffer;
-  globalThis.fetch = async () => new Response(wasmArrayBuffer, { status: 200 });
+  globalThis.fetch = vi.fn(async () => new Response(wasmArrayBuffer, { status: 200 }));
   setSQLiteDatabaseForTesting(null);
+  setSQLiteEngineInitializerForTesting(async () => SQL);
 });
 
 afterEach(() => {
-  setSQLiteDatabaseForTesting(null);
+  restoreDefaultSQLiteEngineInitializerForTesting();
   globalThis.fetch = originalFetch;
   globalThis.indexedDB = originalIndexedDB;
   Object.defineProperty(globalThis, 'crypto', { configurable: true, value: originalCrypto });
+});
+
+function seriesTestBook(id = 'book-existing'): Book {
+  const timestamp = new Date().toISOString();
+  return {
+    id,
+    title: 'Existing Manuscript',
+    author: 'Test Author',
+    publisherId: 'publisher-1',
+    description: 'A test manuscript.',
+    price: 3,
+    currency: 'USD',
+    coverFront: {
+      title: 'Existing Manuscript',
+      author: 'Test Author',
+      bgType: 'solid',
+      bgColor: '#111111',
+      titleColor: '#ffffff',
+      authorColor: '#ffffff',
+      layoutStyle: 'modern',
+    },
+    coverBack: { synopsis: 'A test manuscript.', bgColor: '#111111', textColor: '#ffffff' },
+    chapters: [{
+      id: `${id}-chapter`,
+      bookId: id,
+      title: 'Chapter One',
+      chapterNumber: 1,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      blocks: [],
+    }],
+    references: [],
+    isPublished: false,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    version: '1.0.0',
+  };
+}
+
+async function createSeriesFixture() {
+  const project = await createSeriesProject({ title: 'Test Series', genre: 'Drama' });
+  const season = await createSeason({ seriesId: project.id, seasonNumber: 1, title: 'Season One' });
+  return { project, season };
+}
+
+describe('SQLite WASM engine initialization', () => {
+  it('shares one initialization attempt between concurrent callers', async () => {
+    let resolveInitializer: ((SQL: SqlJsStatic) => void) | undefined;
+    const initializer = vi.fn(() => new Promise<SqlJsStatic>((resolve) => {
+      resolveInitializer = resolve;
+    }));
+    setSQLiteEngineInitializerForTesting(initializer);
+
+    const first = getSQLiteDB();
+    const second = getSQLiteDB();
+    await vi.waitFor(() => expect(resolveInitializer).toBeTypeOf('function'));
+    expect(initializer).toHaveBeenCalledTimes(1);
+
+    resolveInitializer?.(SQL);
+    const [firstDatabase, secondDatabase] = await Promise.all([first, second]);
+    expect(firstDatabase).toBe(secondDatabase);
+    expect(getSQLiteEngineState()).toMatchObject({ status: 'healthy', attempts: 1 });
+  });
+
+  it('uses the generated Vite WASM URL for the installed sql.js binary', async () => {
+    let locatedWasm = '';
+    setSQLiteEngineInitializerForTesting(async (config) => {
+      locatedWasm = config?.locateFile?.('sql-wasm.wasm', '') || '';
+      return SQL;
+    });
+
+    await getSQLiteDB();
+
+    expect(locatedWasm).toBe(SQL_WASM_URL);
+    expect(getSqlJsLocateFile('sql-wasm.wasm')).toBe(SQL_WASM_URL);
+    expect(SQL_WASM_URL).toContain('sql-wasm.wasm');
+  });
+
+  it('keeps a failed initialization memoized until explicit retry', async () => {
+    const initializer = vi.fn()
+      .mockRejectedValueOnce(new WebAssembly.CompileError('invalid WASM'))
+      .mockResolvedValueOnce(SQL);
+    setSQLiteEngineInitializerForTesting(initializer);
+
+    await expect(getSQLiteDB()).rejects.toThrow(/invalid WASM/);
+    await expect(getSQLiteDB()).rejects.toThrow(/invalid WASM/);
+    expect(initializer).toHaveBeenCalledTimes(1);
+    expect(getSQLiteEngineState()).toMatchObject({ status: 'unavailable', attempts: 1 });
+
+    await expect(retrySQLiteInitialization()).resolves.toBeInstanceOf(SQL.Database);
+    expect(initializer).toHaveBeenCalledTimes(2);
+    expect(getSQLiteEngineState()).toMatchObject({ status: 'healthy', attempts: 2 });
+  });
+
+  it('reports invalid WASM as a controlled storage-unavailable status', async () => {
+    setSQLiteEngineInitializerForTesting(async () => {
+      throw new WebAssembly.CompileError('section extends past end of the module');
+    });
+
+    await expect(getSQLiteDB()).rejects.toThrow(/section extends past end/);
+
+    expect(getSQLiteEngineState()).toMatchObject({
+      status: 'unavailable',
+      attempts: 1,
+      error: expect.stringMatching(/section extends past end/),
+    });
+    expect(getDatabaseStartupStatus()).toBe('storage-unavailable');
+  });
+
+  it('does not use a cross-version CDN fallback when the generated WASM is missing', async () => {
+    let requestedUrl = '';
+    const fetchSpy = vi.mocked(globalThis.fetch);
+    setSQLiteEngineInitializerForTesting(async (config) => {
+      requestedUrl = config?.locateFile?.('sql-wasm.wasm', '') || '';
+      throw new Error('WASM asset missing');
+    }, '/assets/sql-wasm-MISSING.wasm');
+
+    await expect(getSQLiteDB()).rejects.toThrow(/WASM asset missing/);
+
+    expect(requestedUrl).toBe('/assets/sql-wasm-MISSING.wasm');
+    expect(requestedUrl).not.toMatch(/^https?:/);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('does not create repeated initialization storms from save attempts', async () => {
+    const initializer = vi.fn(async () => {
+      throw new Error('WASM unavailable');
+    });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    setSQLiteEngineInitializerForTesting(initializer);
+
+    await expect(saveBookToSQLite({} as Book)).rejects.toThrow(/WASM unavailable/);
+    await expect(saveBookToSQLite({} as Book)).rejects.toThrow(/WASM unavailable/);
+    await expect(saveBookToSQLite({} as Book)).rejects.toThrow(/WASM unavailable/);
+
+    expect(initializer).toHaveBeenCalledTimes(1);
+    expect(getSQLiteEngineState().attempts).toBe(1);
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    consoleError.mockRestore();
+  });
+});
+
+describe('Series Book Studio repository', () => {
+  it('creates a series project', async () => {
+    const project = await createSeriesProject({ title: 'Empire Saga', status: 'planning' });
+    expect(project.title).toBe('Empire Saga');
+    expect(await getAllSeriesProjects()).toEqual([expect.objectContaining({ id: project.id })]);
+  });
+
+  it('creates new cast in a Book record and links series participation transactionally', async () => {
+    const hostBook = seriesTestBook('cast-host');
+    await saveBookToSQLite(hostBook);
+    const project = await createSeriesWithStructure({
+      project: { title: 'Cast Series' },
+      seasonCount: 1,
+      episodesPerSeason: 1,
+      newCharacterNames: ['Ari Vale'],
+      characterHostBook: hostBook,
+    });
+    const savedHost = (await getAllLocalBooks()).find((book) => book.id === hostBook.id);
+    const characterId = savedHost?.characters?.[0]?.id;
+    expect(savedHost?.characters?.[0]?.name).toBe('Ari Vale');
+    expect(await getStoryArcs(project.id)).toEqual([
+      expect.objectContaining({ characterId }),
+    ]);
+  });
+
+  it('creates multiple seasons', async () => {
+    const project = await createSeriesProject({ title: 'Multiple Seasons' });
+    await createSeason({ seriesId: project.id, seasonNumber: 1, title: 'One' });
+    await createSeason({ seriesId: project.id, seasonNumber: 2, title: 'Two' });
+    expect(await getSeasonsForSeries(project.id)).toHaveLength(2);
+  });
+
+  it('rejects duplicate season numbers', async () => {
+    const { project } = await createSeriesFixture();
+    await expect(createSeason({ seriesId: project.id, seasonNumber: 1, title: 'Duplicate' }))
+      .rejects.toThrow();
+  });
+
+  it('creates episodes', async () => {
+    const { project, season } = await createSeriesFixture();
+    const episode = await createEpisode({
+      seriesId: project.id, seasonId: season.id, episodeNumber: 1, title: 'Pilot',
+    });
+    expect(await getEpisode(episode.id)).toMatchObject({ title: 'Pilot', status: 'planned' });
+  });
+
+  it('rejects duplicate episode numbers in one season', async () => {
+    const { project, season } = await createSeriesFixture();
+    await createEpisode({ seriesId: project.id, seasonId: season.id, episodeNumber: 1, title: 'Pilot' });
+    await expect(createEpisode({
+      seriesId: project.id, seasonId: season.id, episodeNumber: 1, title: 'Duplicate',
+    })).rejects.toThrow();
+  });
+
+  it('allows the same episode number in different seasons', async () => {
+    const { project, season } = await createSeriesFixture();
+    const second = await createSeason({ seriesId: project.id, seasonNumber: 2, title: 'Two' });
+    await createEpisode({ seriesId: project.id, seasonId: season.id, episodeNumber: 1, title: 'S1 Pilot' });
+    await createEpisode({ seriesId: project.id, seasonId: second.id, episodeNumber: 1, title: 'S2 Pilot' });
+    expect(await getEpisodesForSeason(second.id)).toHaveLength(1);
+  });
+
+  it('reorders seasons transactionally', async () => {
+    const { project, season } = await createSeriesFixture();
+    const second = await createSeason({ seriesId: project.id, seasonNumber: 2, title: 'Two', orderIndex: 1 });
+    await reorderSeasons(project.id, [second.id, season.id]);
+    expect((await getSeasonsForSeries(project.id)).map((item) => item.id)).toEqual([second.id, season.id]);
+  });
+
+  it('reorders episodes transactionally', async () => {
+    const { project, season } = await createSeriesFixture();
+    const first = await createEpisode({ seriesId: project.id, seasonId: season.id, episodeNumber: 1, title: 'One', orderIndex: 0 });
+    const second = await createEpisode({ seriesId: project.id, seasonId: season.id, episodeNumber: 2, title: 'Two', orderIndex: 1 });
+    await reorderEpisodes(season.id, [second.id, first.id]);
+    expect((await getEpisodesForSeason(season.id)).map((item) => item.id)).toEqual([second.id, first.id]);
+  });
+
+  it('creates and transactionally links a default book', async () => {
+    const { project, season } = await createSeriesFixture();
+    const episode = await createEpisode({
+      seriesId: project.id, seasonId: season.id, episodeNumber: 1, title: 'Linked Pilot',
+      previousEpisodeRecap: 'Recap', nextEpisodeTeaser: 'Teaser',
+    });
+    const book = await createLinkedBookFromEpisode(episode.id);
+    expect(book.chapters.map((chapter) => chapter.title)).toEqual(['Previously On', 'Episode Manuscript', 'Next Episode']);
+    expect(await getEpisode(episode.id)).toMatchObject({ linkedBookId: book.id });
+  });
+
+  it('links an existing book and projects series metadata', async () => {
+    const { project, season } = await createSeriesFixture();
+    const episode = await createEpisode({ seriesId: project.id, seasonId: season.id, episodeNumber: 1, title: 'Pilot' });
+    const book = seriesTestBook();
+    await saveBookToSQLite(book);
+    const linked = await linkEpisodeToBook(episode.id, book.id);
+    expect(linked.seriesConfig).toMatchObject({ seriesProjectId: project.id, seriesEpisodeId: episode.id });
+  });
+
+  it('unlinks an episode without deleting its book', async () => {
+    const { project, season } = await createSeriesFixture();
+    const episode = await createEpisode({ seriesId: project.id, seasonId: season.id, episodeNumber: 1, title: 'Pilot' });
+    const book = seriesTestBook();
+    await saveBookToSQLite(book);
+    await linkEpisodeToBook(episode.id, book.id);
+    await unlinkEpisodeFromBook(episode.id);
+    expect((await getEpisode(episode.id))?.linkedBookId).toBeUndefined();
+    expect((await getAllLocalBooks()).some((item) => item.id === book.id)).toBe(true);
+  });
+
+  it('enforces season and linked episode delete restrictions', async () => {
+    const { project, season } = await createSeriesFixture();
+    const episode = await createEpisode({ seriesId: project.id, seasonId: season.id, episodeNumber: 1, title: 'Pilot' });
+    await expect(deleteSeason(season.id, true)).rejects.toThrow(/contains episodes/);
+    const book = await createLinkedBookFromEpisode(episode.id);
+    expect(book.id).toBeTruthy();
+    await expect(deleteEpisode(episode.id, true)).rejects.toThrow(/Unlink/);
+  });
+
+  it('converts confirmed legacy settings without discarding compatibility metadata', async () => {
+    const book = {
+      ...seriesTestBook('legacy-book'),
+      seriesConfig: {
+        isSeries: true, seriesName: 'Legacy Saga', seasonNumber: 2, episodeNumber: 3,
+        episodeTitle: 'Legacy Episode', previousEpisodeRecap: 'Before', nextEpisodeTeaser: 'After',
+      },
+    };
+    await saveBookToSQLite(book);
+    const converted = await convertLegacyBookSeries(book);
+    expect(converted.project.title).toBe('Legacy Saga');
+    expect(converted.episode).toMatchObject({ episodeNumber: 3, previousEpisodeRecap: 'Before' });
+    expect(converted.book.seriesConfig?.legacyConvertedAt).toBeTruthy();
+    expect(converted.book.seriesConfig?.seriesName).toBe('Legacy Saga');
+  });
+
+  it('persists character arcs without duplicating character records', async () => {
+    const { project } = await createSeriesFixture();
+    await saveStoryArc({
+      id: 'arc-1', seriesId: project.id, characterId: 'character-existing',
+      title: 'Trust Arc', description: 'Changes over time', arcType: 'character',
+      status: 'active', milestones: ['Doubt', 'Trust'], transformation: 'Learns trust',
+    });
+    expect(await getStoryArcs(project.id)).toEqual([
+      expect.objectContaining({ characterId: 'character-existing', milestones: ['Doubt', 'Trust'] }),
+    ]);
+  });
+
+  it('persists relationship timelines', async () => {
+    const { project } = await createSeriesFixture();
+    await saveSeriesRelationship({
+      id: 'relationship-1', seriesId: project.id, sourceCharacterId: 'a',
+      targetCharacterId: 'b', relationshipType: 'alliance', status: 'strained',
+      description: 'An uneasy alliance', trustLevel: 30, conflict: 'Competing goals',
+      changesByEpisode: ['E1: meet', 'E2: betrayal'],
+    });
+    expect(await getSeriesRelationships(project.id)).toEqual([
+      expect.objectContaining({ trustLevel: 30, changesByEpisode: ['E1: meet', 'E2: betrayal'] }),
+    ]);
+  });
+
+  it('persists timeline events', async () => {
+    const { project } = await createSeriesFixture();
+    await saveTimelineEvent({
+      id: 'timeline-1', seriesId: project.id, title: 'Founding',
+      description: 'The city is founded.', storyDate: '1900-01-01', sequenceNumber: 1,
+      location: 'Capital', characterIds: ['a'], consequence: 'A nation begins',
+      continuityNotes: 'Founding date is fixed.',
+    });
+    expect(await getTimelineEvents(project.id)).toEqual([
+      expect.objectContaining({ title: 'Founding', characterIds: ['a'] }),
+    ]);
+  });
+
+  it('generates continuity warnings without altering episodes', () => {
+    const episode = {
+      id: 'e2', seriesId: 'series', seasonId: 'season', episodeNumber: 2, title: 'Second',
+      subtitle: '', logline: '', synopsis: '', openingHook: '', previousEpisodeRecap: '',
+      episodeGoal: '', centralConflict: '', stakes: '', subplots: [], midpointTurn: '',
+      climax: '', resolution: '', cliffhanger: '', nextEpisodeTeaser: 'Coming next',
+      requiredCharacterIds: [], locationIds: [], objectIds: [], continuityObligations: [],
+      status: 'planned' as const, wordCountTarget: 0, orderIndex: 1, createdAt: '', updatedAt: '',
+    };
+    const before = structuredClone(episode);
+    const warnings = generateContinuityWarnings([{
+      id: 'season', seriesId: 'series', seasonNumber: 1, title: 'One', subtitle: '',
+      synopsis: '', theme: '', centralConflict: '', openingSituation: '', climax: '',
+      resolution: '', nextSeasonHook: '', status: 'planned', orderIndex: 0,
+      createdAt: '', updatedAt: '',
+    }], [episode]);
+    expect(warnings.map((warning) => warning.code)).toEqual(expect.arrayContaining(['missing-recap', 'teaser-missing-next']));
+    expect(episode).toEqual(before);
+  });
+
+  it('requires a recap after episode one', () => {
+    const warnings = generateContinuityWarnings([], [{
+      id: 'e2', seriesId: 'series', seasonId: 'missing', episodeNumber: 2, title: 'Second',
+      subtitle: '', logline: '', synopsis: '', openingHook: '', previousEpisodeRecap: '',
+      episodeGoal: '', centralConflict: '', stakes: '', subplots: [], midpointTurn: '',
+      climax: '', resolution: '', cliffhanger: '', nextEpisodeTeaser: '',
+      requiredCharacterIds: [], locationIds: [], objectIds: [], continuityObligations: [],
+      status: 'planned', wordCountTarget: 0, orderIndex: 1, createdAt: '', updatedAt: '',
+    }]);
+    expect(warnings).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'missing-recap' })]));
+  });
+
+  it('warns when a teaser points to a missing next episode', () => {
+    const warnings = generateContinuityWarnings([], [{
+      id: 'e1', seriesId: 'series', seasonId: 'season', episodeNumber: 1, title: 'First',
+      subtitle: '', logline: '', synopsis: '', openingHook: '', previousEpisodeRecap: '',
+      episodeGoal: '', centralConflict: '', stakes: '', subplots: [], midpointTurn: '',
+      climax: '', resolution: '', cliffhanger: '', nextEpisodeTeaser: 'Next time',
+      requiredCharacterIds: [], locationIds: [], objectIds: [], continuityObligations: [],
+      status: 'planned', wordCountTarget: 0, orderIndex: 0, createdAt: '', updatedAt: '',
+    }]);
+    expect(warnings).toEqual(expect.arrayContaining([expect.objectContaining({ code: 'teaser-missing-next' })]));
+  });
+
+  it('calculates distinct content, commercial, security, and published readiness', async () => {
+    const { project, season } = await createSeriesFixture();
+    const episode = await createEpisode({
+      seriesId: project.id, seasonId: season.id, episodeNumber: 1, title: 'Ready',
+      logline: 'A goal', synopsis: 'A complete synopsis',
+    });
+    const book = seriesTestBook();
+    const checklist = {
+      ...(await getEpisodeChecklist(episode.id)),
+      continuityReviewed: true, referencesReviewed: true, legalReviewed: true,
+      coverComplete: true, pricingComplete: true, marketingComplete: true, signingReady: true,
+    };
+    await saveEpisodeChecklist(checklist);
+    expect(calculateEpisodeReadiness(episode, book, checklist, false, true)).toMatchObject({
+      contentReady: true, commercialReady: true, securityReady: true, published: false,
+    });
+  });
+
+  it('backup and restore retain normalized series records', async () => {
+    const { project, season } = await createSeriesFixture();
+    await createEpisode({ seriesId: project.id, seasonId: season.id, episodeNumber: 1, title: 'Backed Up' });
+    const backup = await exportLocalDatabaseBackup();
+    setSQLiteDatabaseForTesting(null);
+    await restoreLocalDatabaseBackup(backup);
+    expect(await getAllSeriesProjects()).toEqual([expect.objectContaining({ id: project.id })]);
+    expect(await getEpisodesForSeason(season.id)).toEqual([expect.objectContaining({ title: 'Backed Up' })]);
+  });
+
+  it('explicit episode save retry can succeed after a controlled failure', async () => {
+    const { project, season } = await createSeriesFixture();
+    const episode = await createEpisode({ seriesId: project.id, seasonId: season.id, episodeNumber: 1, title: 'Retry' });
+    await expect(updateEpisode('missing-id', { title: 'Fails' })).rejects.toThrow(/not found/);
+    await expect(updateEpisode(episode.id, { title: 'Retry Succeeds' })).resolves.toMatchObject({ title: 'Retry Succeeds' });
+  });
 });
 
 describe('SQLite database migrations', () => {

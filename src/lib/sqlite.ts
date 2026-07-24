@@ -1,4 +1,5 @@
-import initSqlJs, { Database } from 'sql.js';
+import initSqlJs, { Database, SqlJsStatic } from 'sql.js';
+import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
 import JSZip from 'jszip';
 import { Book, Chapter, ContentBlock, ReferenceItem, ReaderLibraryItem, Bookmark, HighlightNote, QuizAttempt } from '../types';
 
@@ -19,7 +20,36 @@ export const SQLITE_STORAGE_KEYS = {
 
 let dbInstance: Database | null = null;
 let initPromise: Promise<Database> | null = null;
+let sqlJsPromise: Promise<SqlJsStatic> | null = null;
 let databaseStartupStatus: DatabaseStartupStatus = 'loaded';
+export type SQLiteEngineInitializer = (
+  config?: Parameters<typeof initSqlJs>[0]
+) => Promise<SqlJsStatic>;
+const defaultSqlJsInitializer: SQLiteEngineInitializer = (config) => initSqlJs(config);
+let sqlJsInitializer: SQLiteEngineInitializer = defaultSqlJsInitializer;
+let configuredSqlWasmUrl = sqlWasmUrl;
+let initializationFailureReported = false;
+
+export const SQL_WASM_URL = sqlWasmUrl;
+
+export type SQLiteEngineStatus = 'idle' | 'initializing' | 'healthy' | 'unavailable';
+
+export interface SQLiteEngineState {
+  status: SQLiteEngineStatus;
+  error: string | null;
+  attempts: number;
+  wasmUrl: string;
+  sqliteVersion: string | null;
+}
+
+let sqliteEngineState: SQLiteEngineState = {
+  status: 'idle',
+  error: null,
+  attempts: 0,
+  wasmUrl: configuredSqlWasmUrl,
+  sqliteVersion: null,
+};
+const sqliteEngineListeners = new Set<(state: SQLiteEngineState) => void>();
 
 export interface DatabaseMigration {
   version: number;
@@ -32,6 +62,7 @@ export type DatabaseStartupStatus =
   | 'created'
   | 'recovered'
   | 'corrupted'
+  | 'storage-unavailable'
   | 'restore-required';
 
 export interface LocalDatabaseBackupManifest {
@@ -56,7 +87,7 @@ export interface LocalDatabaseRestoreResult {
   message: string;
 }
 
-export const DATABASE_SCHEMA_VERSION = 2;
+export const DATABASE_SCHEMA_VERSION = 4;
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -139,6 +170,34 @@ export function getDatabaseStartupStatus(): DatabaseStartupStatus {
   return databaseStartupStatus;
 }
 
+export function getSQLiteEngineState(): SQLiteEngineState {
+  return { ...sqliteEngineState };
+}
+
+export function subscribeSQLiteEngineState(
+  listener: (state: SQLiteEngineState) => void
+): () => void {
+  sqliteEngineListeners.add(listener);
+  listener(getSQLiteEngineState());
+  return () => sqliteEngineListeners.delete(listener);
+}
+
+function updateSQLiteEngineState(update: Partial<SQLiteEngineState>): void {
+  sqliteEngineState = { ...sqliteEngineState, ...update };
+  const snapshot = getSQLiteEngineState();
+  sqliteEngineListeners.forEach((listener) => listener(snapshot));
+}
+
+function reportSQLiteUnavailable(error: unknown): void {
+  const message = errorMessage(error);
+  databaseStartupStatus = 'storage-unavailable';
+  updateSQLiteEngineState({ status: 'unavailable', error: message, sqliteVersion: null });
+  if (!initializationFailureReported) {
+    initializationFailureReported = true;
+    console.error('Failed to initialize SQLite WASM engine:', error);
+  }
+}
+
 export function setSQLiteDatabaseForTesting(
   db: Database | null,
   status: DatabaseStartupStatus = db ? 'loaded' : 'created'
@@ -152,9 +211,35 @@ export function setSQLiteDatabaseForTesting(
   }
   dbInstance = db;
   initPromise = db ? Promise.resolve(db) : null;
+  sqlJsPromise = null;
   databaseStartupStatus = status;
+  initializationFailureReported = false;
+  updateSQLiteEngineState({
+    status: db ? 'healthy' : 'idle',
+    error: null,
+    attempts: 0,
+    wasmUrl: configuredSqlWasmUrl,
+    sqliteVersion: null,
+  });
   persistSeq = 0;
   lastPersist = Promise.resolve();
+}
+
+export function setSQLiteEngineInitializerForTesting(
+  initializer: SQLiteEngineInitializer,
+  wasmUrl = SQL_WASM_URL
+): void {
+  setSQLiteDatabaseForTesting(null);
+  sqlJsInitializer = initializer;
+  configuredSqlWasmUrl = wasmUrl;
+  updateSQLiteEngineState({ wasmUrl });
+}
+
+export function restoreDefaultSQLiteEngineInitializerForTesting(): void {
+  setSQLiteDatabaseForTesting(null);
+  sqlJsInitializer = defaultSqlJsInitializer;
+  configuredSqlWasmUrl = SQL_WASM_URL;
+  updateSQLiteEngineState({ wasmUrl: SQL_WASM_URL });
 }
 
 /**
@@ -304,6 +389,408 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
       }
     },
   },
+  {
+    version: 3,
+    name: 'add_normalized_series_studio',
+    up: (db) => {
+      db.run(`
+        CREATE TABLE IF NOT EXISTS series_projects (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          subtitle TEXT DEFAULT '',
+          description TEXT DEFAULT '',
+          genre TEXT DEFAULT '',
+          sub_genres_json TEXT NOT NULL DEFAULT '[]',
+          target_audience TEXT DEFAULT '',
+          language TEXT DEFAULT 'English (US)',
+          status TEXT NOT NULL,
+          author_ids_json TEXT NOT NULL DEFAULT '[]',
+          publisher_id TEXT DEFAULT '',
+          cover_asset_id TEXT,
+          banner_asset_id TEXT,
+          theme TEXT DEFAULT '',
+          premise TEXT DEFAULT '',
+          central_conflict TEXT DEFAULT '',
+          series_promise TEXT DEFAULT '',
+          intended_reader_value TEXT DEFAULT '',
+          planned_season_count INTEGER NOT NULL DEFAULT 1,
+          planned_episode_count INTEGER NOT NULL DEFAULT 1,
+          episode_naming_convention TEXT DEFAULT 'Episode {number}',
+          numbering_format TEXT DEFAULT 'S{season}E{episode}',
+          world_description TEXT DEFAULT '',
+          historical_background TEXT DEFAULT '',
+          cultural_notes TEXT DEFAULT '',
+          organizations_json TEXT NOT NULL DEFAULT '[]',
+          terminology_json TEXT NOT NULL DEFAULT '[]',
+          system_rules_json TEXT NOT NULL DEFAULT '[]',
+          release_model TEXT NOT NULL DEFAULT 'irregular',
+          pricing_strategy TEXT DEFAULT '',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS series_seasons (
+          id TEXT PRIMARY KEY,
+          series_id TEXT NOT NULL,
+          season_number INTEGER NOT NULL,
+          title TEXT NOT NULL,
+          subtitle TEXT DEFAULT '',
+          synopsis TEXT DEFAULT '',
+          theme TEXT DEFAULT '',
+          central_conflict TEXT DEFAULT '',
+          opening_situation TEXT DEFAULT '',
+          climax TEXT DEFAULT '',
+          resolution TEXT DEFAULT '',
+          next_season_hook TEXT DEFAULT '',
+          status TEXT NOT NULL,
+          planned_release_date TEXT,
+          order_index INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          UNIQUE(series_id, season_number),
+          FOREIGN KEY (series_id) REFERENCES series_projects(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS series_episodes (
+          id TEXT PRIMARY KEY,
+          series_id TEXT NOT NULL,
+          season_id TEXT NOT NULL,
+          linked_book_id TEXT,
+          episode_number INTEGER NOT NULL,
+          title TEXT NOT NULL,
+          subtitle TEXT DEFAULT '',
+          logline TEXT DEFAULT '',
+          synopsis TEXT DEFAULT '',
+          opening_hook TEXT DEFAULT '',
+          previous_episode_recap TEXT DEFAULT '',
+          episode_goal TEXT DEFAULT '',
+          central_conflict TEXT DEFAULT '',
+          stakes TEXT DEFAULT '',
+          subplots_json TEXT NOT NULL DEFAULT '[]',
+          midpoint_turn TEXT DEFAULT '',
+          climax TEXT DEFAULT '',
+          resolution TEXT DEFAULT '',
+          cliffhanger TEXT DEFAULT '',
+          next_episode_teaser TEXT DEFAULT '',
+          required_character_ids_json TEXT NOT NULL DEFAULT '[]',
+          location_ids_json TEXT NOT NULL DEFAULT '[]',
+          object_ids_json TEXT NOT NULL DEFAULT '[]',
+          continuity_obligations_json TEXT NOT NULL DEFAULT '[]',
+          release_date TEXT,
+          writing_deadline TEXT,
+          editing_deadline TEXT,
+          cover_deadline TEXT,
+          signing_deadline TEXT,
+          marketing_launch_date TEXT,
+          status TEXT NOT NULL,
+          word_count_target INTEGER NOT NULL DEFAULT 0,
+          order_index INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          UNIQUE(season_id, episode_number),
+          FOREIGN KEY (series_id) REFERENCES series_projects(id) ON DELETE CASCADE,
+          FOREIGN KEY (season_id) REFERENCES series_seasons(id) ON DELETE RESTRICT
+        );
+
+        CREATE TABLE IF NOT EXISTS series_story_arcs (
+          id TEXT PRIMARY KEY,
+          series_id TEXT NOT NULL,
+          season_id TEXT,
+          character_id TEXT,
+          title TEXT NOT NULL,
+          description TEXT DEFAULT '',
+          arc_type TEXT DEFAULT '',
+          start_episode_id TEXT,
+          end_episode_id TEXT,
+          status TEXT NOT NULL,
+          milestones_json TEXT NOT NULL DEFAULT '[]',
+          series_role TEXT DEFAULT '',
+          starting_condition TEXT DEFAULT '',
+          desire TEXT DEFAULT '',
+          need TEXT DEFAULT '',
+          fear TEXT DEFAULT '',
+          secret TEXT DEFAULT '',
+          transformation TEXT DEFAULT '',
+          end_condition TEXT DEFAULT '',
+          unresolved_thread TEXT DEFAULT '',
+          FOREIGN KEY (series_id) REFERENCES series_projects(id) ON DELETE CASCADE,
+          FOREIGN KEY (season_id) REFERENCES series_seasons(id) ON DELETE SET NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS series_timeline_events (
+          id TEXT PRIMARY KEY,
+          series_id TEXT NOT NULL,
+          season_id TEXT,
+          episode_id TEXT,
+          title TEXT NOT NULL,
+          description TEXT DEFAULT '',
+          story_date TEXT,
+          sequence_number INTEGER NOT NULL DEFAULT 0,
+          location TEXT DEFAULT '',
+          character_ids_json TEXT NOT NULL DEFAULT '[]',
+          consequence TEXT DEFAULT '',
+          continuity_notes TEXT DEFAULT '',
+          FOREIGN KEY (series_id) REFERENCES series_projects(id) ON DELETE CASCADE,
+          FOREIGN KEY (season_id) REFERENCES series_seasons(id) ON DELETE SET NULL,
+          FOREIGN KEY (episode_id) REFERENCES series_episodes(id) ON DELETE SET NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS series_continuity_rules (
+          id TEXT PRIMARY KEY,
+          series_id TEXT NOT NULL,
+          category TEXT NOT NULL,
+          subject_id TEXT,
+          statement TEXT NOT NULL,
+          source_episode_id TEXT,
+          severity TEXT NOT NULL,
+          active INTEGER NOT NULL DEFAULT 1,
+          FOREIGN KEY (series_id) REFERENCES series_projects(id) ON DELETE CASCADE,
+          FOREIGN KEY (source_episode_id) REFERENCES series_episodes(id) ON DELETE SET NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS series_locations (
+          id TEXT PRIMARY KEY,
+          series_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          description TEXT DEFAULT '',
+          geography TEXT DEFAULT '',
+          cultural_notes TEXT DEFAULT '',
+          visual_notes TEXT DEFAULT '',
+          first_appearance_episode_id TEXT,
+          asset_ids_json TEXT NOT NULL DEFAULT '[]',
+          FOREIGN KEY (series_id) REFERENCES series_projects(id) ON DELETE CASCADE,
+          FOREIGN KEY (first_appearance_episode_id) REFERENCES series_episodes(id) ON DELETE SET NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS series_objects (
+          id TEXT PRIMARY KEY,
+          series_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          type TEXT DEFAULT '',
+          description TEXT DEFAULT '',
+          owner_character_id TEXT,
+          first_appearance_episode_id TEXT,
+          importance TEXT DEFAULT '',
+          asset_ids_json TEXT NOT NULL DEFAULT '[]',
+          FOREIGN KEY (series_id) REFERENCES series_projects(id) ON DELETE CASCADE,
+          FOREIGN KEY (first_appearance_episode_id) REFERENCES series_episodes(id) ON DELETE SET NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS series_relationships (
+          id TEXT PRIMARY KEY,
+          series_id TEXT NOT NULL,
+          source_character_id TEXT NOT NULL,
+          target_character_id TEXT NOT NULL,
+          relationship_type TEXT NOT NULL,
+          status TEXT NOT NULL,
+          description TEXT DEFAULT '',
+          started_episode_id TEXT,
+          ended_episode_id TEXT,
+          trust_level INTEGER,
+          conflict TEXT DEFAULT '',
+          changes_by_episode_json TEXT NOT NULL DEFAULT '[]',
+          FOREIGN KEY (series_id) REFERENCES series_projects(id) ON DELETE CASCADE,
+          FOREIGN KEY (started_episode_id) REFERENCES series_episodes(id) ON DELETE SET NULL,
+          FOREIGN KEY (ended_episode_id) REFERENCES series_episodes(id) ON DELETE SET NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS series_episode_checklists (
+          episode_id TEXT PRIMARY KEY,
+          outline_complete INTEGER NOT NULL DEFAULT 0,
+          manuscript_complete INTEGER NOT NULL DEFAULT 0,
+          continuity_reviewed INTEGER NOT NULL DEFAULT 0,
+          references_reviewed INTEGER NOT NULL DEFAULT 0,
+          legal_reviewed INTEGER NOT NULL DEFAULT 0,
+          cover_complete INTEGER NOT NULL DEFAULT 0,
+          pricing_complete INTEGER NOT NULL DEFAULT 0,
+          marketing_complete INTEGER NOT NULL DEFAULT 0,
+          signing_ready INTEGER NOT NULL DEFAULT 0,
+          publication_ready INTEGER NOT NULL DEFAULT 0,
+          FOREIGN KEY (episode_id) REFERENCES series_episodes(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_series_seasons_order
+          ON series_seasons(series_id, order_index);
+        CREATE INDEX IF NOT EXISTS idx_series_episodes_order
+          ON series_episodes(season_id, order_index);
+        CREATE INDEX IF NOT EXISTS idx_series_episodes_book
+          ON series_episodes(linked_book_id);
+        CREATE INDEX IF NOT EXISTS idx_series_timeline_order
+          ON series_timeline_events(series_id, sequence_number);
+      `);
+    },
+  },
+  {
+    version: 4,
+    name: 'add_interactive_series_production_studio',
+    up: (db) => {
+      db.run(`
+        CREATE TABLE IF NOT EXISTS series_staff_assignments (
+          id TEXT PRIMARY KEY, series_id TEXT NOT NULL, user_id TEXT NOT NULL,
+          display_name TEXT NOT NULL DEFAULT '', role TEXT NOT NULL,
+          scope_type TEXT NOT NULL, scope_id TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+          UNIQUE(series_id,user_id,role,scope_type,scope_id),
+          FOREIGN KEY(series_id) REFERENCES series_projects(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS series_permissions (
+          id TEXT PRIMARY KEY, assignment_id TEXT NOT NULL, permission TEXT NOT NULL,
+          allowed INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+          UNIQUE(assignment_id,permission),
+          FOREIGN KEY(assignment_id) REFERENCES series_staff_assignments(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS series_chapters (
+          id TEXT PRIMARY KEY, series_id TEXT NOT NULL, season_id TEXT NOT NULL,
+          episode_id TEXT NOT NULL, chapter_number INTEGER NOT NULL, title TEXT NOT NULL,
+          synopsis TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'draft',
+          order_index INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+          UNIQUE(episode_id,chapter_number),
+          FOREIGN KEY(series_id) REFERENCES series_projects(id) ON DELETE CASCADE,
+          FOREIGN KEY(season_id) REFERENCES series_seasons(id) ON DELETE RESTRICT,
+          FOREIGN KEY(episode_id) REFERENCES series_episodes(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS series_scenes (
+          id TEXT PRIMARY KEY, series_id TEXT NOT NULL, season_id TEXT NOT NULL,
+          episode_id TEXT NOT NULL, chapter_id TEXT NOT NULL, scene_number INTEGER NOT NULL,
+          title TEXT NOT NULL, purpose TEXT NOT NULL DEFAULT '', synopsis TEXT NOT NULL DEFAULT '',
+          opening_situation TEXT NOT NULL DEFAULT '', conflict TEXT NOT NULL DEFAULT '',
+          turning_point TEXT NOT NULL DEFAULT '', outcome TEXT NOT NULL DEFAULT '',
+          location_id TEXT, character_ids_json TEXT NOT NULL DEFAULT '[]',
+          asset_ids_json TEXT NOT NULL DEFAULT '[]', possession_ids_json TEXT NOT NULL DEFAULT '[]',
+          story_date TEXT, story_time TEXT NOT NULL DEFAULT '', weather TEXT NOT NULL DEFAULT '',
+          status TEXT NOT NULL DEFAULT 'draft', order_index INTEGER NOT NULL DEFAULT 0,
+          archived_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+          UNIQUE(chapter_id,scene_number),
+          FOREIGN KEY(series_id) REFERENCES series_projects(id) ON DELETE CASCADE,
+          FOREIGN KEY(chapter_id) REFERENCES series_chapters(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS series_story_blocks (
+          id TEXT PRIMARY KEY, series_id TEXT NOT NULL, chapter_id TEXT NOT NULL,
+          scene_id TEXT NOT NULL, block_type TEXT NOT NULL, content TEXT NOT NULL DEFAULT '',
+          image_asset_id TEXT, caption TEXT NOT NULL DEFAULT '', order_index INTEGER NOT NULL DEFAULT 0,
+          created_by TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+          FOREIGN KEY(series_id) REFERENCES series_projects(id) ON DELETE CASCADE,
+          FOREIGN KEY(chapter_id) REFERENCES series_chapters(id) ON DELETE CASCADE,
+          FOREIGN KEY(scene_id) REFERENCES series_scenes(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS series_story_block_links (
+          id TEXT PRIMARY KEY, block_id TEXT NOT NULL, entity_type TEXT NOT NULL,
+          entity_id TEXT NOT NULL, label TEXT NOT NULL, start_offset INTEGER NOT NULL DEFAULT 0,
+          end_offset INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
+          FOREIGN KEY(block_id) REFERENCES series_story_blocks(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS series_characters (
+          id TEXT PRIMARY KEY, series_id TEXT NOT NULL, source_book_character_id TEXT,
+          name TEXT NOT NULL, aliases_json TEXT NOT NULL DEFAULT '[]', description TEXT NOT NULL DEFAULT '',
+          status TEXT NOT NULL DEFAULT 'alive', death_scene_id TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+          UNIQUE(series_id,source_book_character_id),
+          FOREIGN KEY(series_id) REFERENCES series_projects(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS series_actors (
+          id TEXT PRIMARY KEY, series_id TEXT NOT NULL, name TEXT NOT NULL,
+          bio TEXT NOT NULL DEFAULT '', contact_notes TEXT NOT NULL DEFAULT '', image_asset_id TEXT,
+          created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+          FOREIGN KEY(series_id) REFERENCES series_projects(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS series_character_actor_assignments (
+          id TEXT PRIMARY KEY, series_id TEXT NOT NULL, character_id TEXT NOT NULL, actor_id TEXT NOT NULL,
+          assignment_type TEXT NOT NULL, season_id TEXT, episode_id TEXT, start_date TEXT, end_date TEXT,
+          notes TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+          UNIQUE(character_id,actor_id,assignment_type,season_id,episode_id),
+          FOREIGN KEY(series_id) REFERENCES series_projects(id) ON DELETE CASCADE,
+          FOREIGN KEY(character_id) REFERENCES series_characters(id) ON DELETE CASCADE,
+          FOREIGN KEY(actor_id) REFERENCES series_actors(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS series_assets (
+          id TEXT PRIMARY KEY, series_id TEXT NOT NULL, name TEXT NOT NULL, asset_type TEXT NOT NULL,
+          description TEXT NOT NULL DEFAULT '', owner_character_id TEXT, custodian_character_id TEXT,
+          status TEXT NOT NULL DEFAULT 'available', acquired_scene_id TEXT, lost_scene_id TEXT,
+          destroyed_scene_id TEXT, first_appearance_scene_id TEXT, continuity_notes TEXT NOT NULL DEFAULT '',
+          file_url TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+          FOREIGN KEY(series_id) REFERENCES series_projects(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS series_character_possessions (
+          id TEXT PRIMARY KEY, series_id TEXT NOT NULL, asset_id TEXT NOT NULL, character_id TEXT NOT NULL,
+          status TEXT NOT NULL, acquired_scene_id TEXT, transferred_scene_id TEXT,
+          transferred_to_character_id TEXT, lost_scene_id TEXT, destroyed_scene_id TEXT,
+          notes TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+          FOREIGN KEY(series_id) REFERENCES series_projects(id) ON DELETE CASCADE,
+          FOREIGN KEY(asset_id) REFERENCES series_assets(id) ON DELETE RESTRICT,
+          FOREIGN KEY(character_id) REFERENCES series_characters(id) ON DELETE RESTRICT
+        );
+        CREATE TABLE IF NOT EXISTS series_scene_characters (
+          scene_id TEXT NOT NULL, character_id TEXT NOT NULL, required INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY(scene_id,character_id),
+          FOREIGN KEY(scene_id) REFERENCES series_scenes(id) ON DELETE CASCADE,
+          FOREIGN KEY(character_id) REFERENCES series_characters(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS series_scene_assets (
+          scene_id TEXT NOT NULL, asset_id TEXT NOT NULL, usage_note TEXT NOT NULL DEFAULT '',
+          PRIMARY KEY(scene_id,asset_id),
+          FOREIGN KEY(scene_id) REFERENCES series_scenes(id) ON DELETE CASCADE,
+          FOREIGN KEY(asset_id) REFERENCES series_assets(id) ON DELETE RESTRICT
+        );
+        CREATE TABLE IF NOT EXISTS series_dialogue_blocks (
+          id TEXT PRIMARY KEY, series_id TEXT NOT NULL, scene_id TEXT NOT NULL,
+          story_block_id TEXT NOT NULL UNIQUE, character_id TEXT NOT NULL, actor_id TEXT,
+          dialogue TEXT NOT NULL, emotion TEXT NOT NULL DEFAULT '', delivery TEXT NOT NULL DEFAULT '',
+          action_before TEXT NOT NULL DEFAULT '', action_after TEXT NOT NULL DEFAULT '',
+          audio_asset_id TEXT, image_asset_id TEXT, order_index INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+          FOREIGN KEY(series_id) REFERENCES series_projects(id) ON DELETE CASCADE,
+          FOREIGN KEY(scene_id) REFERENCES series_scenes(id) ON DELETE CASCADE,
+          FOREIGN KEY(story_block_id) REFERENCES series_story_blocks(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS series_editorial_reviews (
+          id TEXT PRIMARY KEY, series_id TEXT NOT NULL, scope_type TEXT NOT NULL, scope_id TEXT NOT NULL,
+          status TEXT NOT NULL, assigned_to TEXT, requested_by TEXT, reviewed_by TEXT,
+          review_note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+          FOREIGN KEY(series_id) REFERENCES series_projects(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS series_comments (
+          id TEXT PRIMARY KEY, series_id TEXT NOT NULL, scope_type TEXT NOT NULL, scope_id TEXT NOT NULL,
+          author_id TEXT NOT NULL, body TEXT NOT NULL, mention_user_ids_json TEXT NOT NULL DEFAULT '[]',
+          resolved INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+          FOREIGN KEY(series_id) REFERENCES series_projects(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS series_revision_history (
+          id TEXT PRIMARY KEY, series_id TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL,
+          revision_number INTEGER NOT NULL, changed_by TEXT NOT NULL, summary TEXT NOT NULL DEFAULT '',
+          snapshot TEXT NOT NULL, created_at TEXT NOT NULL,
+          UNIQUE(entity_type,entity_id,revision_number),
+          FOREIGN KEY(series_id) REFERENCES series_projects(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS series_cover_projects (
+          id TEXT PRIMARY KEY, series_id TEXT NOT NULL, season_id TEXT, episode_id TEXT, book_id TEXT,
+          cover_type TEXT NOT NULL, title TEXT NOT NULL DEFAULT '', subtitle TEXT NOT NULL DEFAULT '',
+          author TEXT NOT NULL DEFAULT '', background_image_asset_id TEXT,
+          gradient_start TEXT NOT NULL DEFAULT '#24282c', gradient_end TEXT NOT NULL DEFAULT '#ff6321',
+          series_badge TEXT NOT NULL DEFAULT '', season_badge TEXT NOT NULL DEFAULT '',
+          episode_badge TEXT NOT NULL DEFAULT '', actor_ids_json TEXT NOT NULL DEFAULT '[]',
+          character_ids_json TEXT NOT NULL DEFAULT '[]', publisher_mark_asset_id TEXT,
+          price TEXT NOT NULL DEFAULT '', release_date TEXT, template_id TEXT,
+          status TEXT NOT NULL DEFAULT 'draft', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+          FOREIGN KEY(series_id) REFERENCES series_projects(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_series_chapters_order ON series_chapters(episode_id,order_index);
+        CREATE INDEX IF NOT EXISTS idx_series_scenes_order ON series_scenes(chapter_id,order_index);
+        CREATE INDEX IF NOT EXISTS idx_series_blocks_order ON series_story_blocks(scene_id,order_index);
+        CREATE INDEX IF NOT EXISTS idx_series_staff_scope ON series_staff_assignments(series_id,scope_type,scope_id);
+        CREATE INDEX IF NOT EXISTS idx_series_revisions_entity ON series_revision_history(entity_type,entity_id,revision_number);
+      `);
+      const relationshipColumns = new Set(
+        (db.exec('PRAGMA table_info(series_relationships);')[0]?.values ?? []).map((row) => String(row[1]))
+      );
+      const additions: ReadonlyArray<readonly [string,string]> = [
+        ['conflict_level','INTEGER NOT NULL DEFAULT 0'],['active','INTEGER NOT NULL DEFAULT 1'],
+        ['betrayal',"TEXT NOT NULL DEFAULT ''"],['reconciliation',"TEXT NOT NULL DEFAULT ''"],
+        ['created_at',"TEXT NOT NULL DEFAULT ''"],['updated_at',"TEXT NOT NULL DEFAULT ''"],
+      ];
+      for (const [column,definition] of additions) {
+        if (!relationshipColumns.has(column)) db.run(`ALTER TABLE series_relationships ADD COLUMN ${column} ${definition};`);
+      }
+    },
+  },
 ];
 
 export function getDatabaseUserVersion(db: Database): number {
@@ -354,52 +841,83 @@ export function applyDatabaseMigrations(
   }
 }
 
-/**
- * Helper to fetch WASM binary buffer from local or fallback CDN sources
- */
-async function loadWasmBinary(): Promise<ArrayBuffer> {
-  const urls = [
-    '/sql-wasm.wasm?v=1.14.1',
-    'https://cdn.jsdelivr.net/npm/sql.js@1.14.1/dist/sql-wasm.wasm',
-    'https://cdn.jsdelivr.net/npm/sql.js@1.12.0/dist/sql-wasm.wasm',
-    'https://sql.js.org/dist/sql-wasm.wasm',
-  ];
-
-  for (const url of urls) {
-    try {
-      const response = await fetch(url, { cache: 'no-cache' });
-      if (response.ok) {
-        const buffer = await response.arrayBuffer();
-        if (buffer && buffer.byteLength >= 4) {
-          const header = new Uint8Array(buffer, 0, 4);
-          if (header[0] === 0x00 && header[1] === 0x61 && header[2] === 0x73 && header[3] === 0x6d) {
-            return buffer;
-          } else {
-            console.warn(`Response from ${url} is not a valid WebAssembly binary.`);
-          }
-        }
-      }
-    } catch (e) {
-      console.warn(`Failed to fetch WASM from ${url}:`, e);
-    }
-  }
-
-  throw new Error('Could not fetch valid sql-wasm.wasm from local or fallback CDN sources.');
+export function getSqlJsLocateFile(file: string): string {
+  return file.endsWith('.wasm') ? configuredSqlWasmUrl : file;
 }
 
-async function initializeSqlJs() {
+/**
+ * A successful module load is not enough: instantiate SQLite and execute a
+ * query before exposing the engine as healthy.
+ */
+export function runSQLiteEngineHealthCheck(SQL: SqlJsStatic): string {
+  let healthDatabase: Database | null = null;
   try {
-    const wasmBuffer = await loadWasmBinary();
-    return await initSqlJs({
-      wasmBinary: wasmBuffer,
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/sql.js@1.14.1/dist/${file}`,
-    });
-  } catch (wasmError) {
-    console.warn('WASM ArrayBuffer fetch/compile strategy failed, trying CDN locateFile strategy:', wasmError);
-    return initSqlJs({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/sql.js@1.14.1/dist/${file}`,
-    });
+    healthDatabase = new SQL.Database();
+    const result = healthDatabase.exec('SELECT sqlite_version();');
+    const sqliteVersion = String(result[0]?.values[0]?.[0] ?? '');
+    if (!sqliteVersion) {
+      throw new Error('SQLite engine health check returned no version.');
+    }
+    return sqliteVersion;
+  } finally {
+    healthDatabase?.close();
   }
+}
+
+/**
+ * Load exactly one sql.js engine from the Vite-emitted URL. The promise,
+ * including a rejected result, remains shared until explicit retry.
+ */
+async function initializeSqlJs(): Promise<SqlJsStatic> {
+  if (sqlJsPromise) return sqlJsPromise;
+
+  updateSQLiteEngineState({
+    status: 'initializing',
+    error: null,
+    attempts: sqliteEngineState.attempts + 1,
+    wasmUrl: configuredSqlWasmUrl,
+    sqliteVersion: null,
+  });
+
+  sqlJsPromise = (async () => {
+    try {
+      const SQL = await sqlJsInitializer({
+        locateFile: getSqlJsLocateFile,
+      });
+      const sqliteVersion = runSQLiteEngineHealthCheck(SQL);
+      updateSQLiteEngineState({
+        status: 'healthy',
+        error: null,
+        sqliteVersion,
+      });
+      return SQL;
+    } catch (error) {
+      reportSQLiteUnavailable(error);
+      throw error;
+    }
+  })();
+
+  return sqlJsPromise;
+}
+
+export async function retrySQLiteInitialization(): Promise<Database> {
+  if (dbInstance) {
+    try {
+      dbInstance.close();
+    } catch (error) {
+      console.warn('Failed to close SQLite database before retry:', error);
+    }
+  }
+  dbInstance = null;
+  initPromise = null;
+  sqlJsPromise = null;
+  initializationFailureReported = false;
+  updateSQLiteEngineState({
+    status: 'idle',
+    error: null,
+    sqliteVersion: null,
+  });
+  return getSQLiteDB();
 }
 
 /**
@@ -459,8 +977,7 @@ export async function getSQLiteDB(): Promise<Database> {
         }
       }
       dbInstance = null;
-      initPromise = null;
-      console.error('Failed to initialize SQLite WASM engine:', error);
+      reportSQLiteUnavailable(error);
       throw error;
     }
   })();
@@ -502,14 +1019,31 @@ export async function executeMutation(sql: string, params: any[] = []): Promise<
   return res;
 }
 
-/**
- * Save / Upsert Book into local SQLite storage
- */
-export async function saveBookToSQLite(book: Book): Promise<void> {
+export async function runSQLiteTransaction<T>(
+  operation: (db: Database) => T | Promise<T>
+): Promise<T> {
   const db = await getSQLiteDB();
   db.run('PRAGMA foreign_keys = ON;');
   db.run('BEGIN TRANSACTION;');
   try {
+    const result = await operation(db);
+    db.run('COMMIT;');
+    await persistDbToIndexedDB();
+    return result;
+  } catch (error) {
+    try {
+      db.run('ROLLBACK;');
+    } catch {
+      // Preserve the operation error; rollback failure is secondary.
+    }
+    throw error;
+  }
+}
+
+/**
+ * Write a complete book inside an existing transaction.
+ */
+export function writeBookToSQLiteTransaction(db: Database, book: Book): void {
     safeRun(
       db,
       `INSERT OR REPLACE INTO local_books
@@ -629,14 +1163,13 @@ export async function saveBookToSQLite(book: Book): Promise<void> {
         ]
       );
     }
+}
 
-    db.run('COMMIT;');
-  } catch (e) {
-    try { db.run('ROLLBACK;'); } catch {}
-    throw e;
-  }
-
-  await persistDbToIndexedDB();
+/**
+ * Save / Upsert Book into local SQLite storage.
+ */
+export async function saveBookToSQLite(book: Book): Promise<void> {
+  await runSQLiteTransaction((db) => writeBookToSQLiteTransaction(db, book));
 }
 
 /**

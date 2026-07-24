@@ -9,7 +9,7 @@ export function useDeviceAndPWA() {
     return isMobileUA || isSmallScreen;
   });
 
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstallable, setIsInstallable] = useState<boolean>(false);
   const [isInIframe, setIsInIframe] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
@@ -37,6 +37,7 @@ export function useDeviceAndPWA() {
       setIsStandalone(e.matches);
       if (e.matches) {
         setIsInstallable(false);
+        setDeferredPrompt(null);
       }
     };
     if (mediaQuery.addEventListener) {
@@ -62,9 +63,10 @@ export function useDeviceAndPWA() {
   }, []);
 
   useEffect(() => {
-    const handleBeforeInstallPrompt = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
+    const handleBeforeInstallPrompt = (event: Event) => {
+      const promptEvent = event as BeforeInstallPromptEvent;
+      promptEvent.preventDefault();
+      setDeferredPrompt(promptEvent);
       setIsInstallable(true);
       // When beforeinstallprompt is active, the app is not currently running as an installed PWA
       setIsStandalone(false);
@@ -92,19 +94,19 @@ export function useDeviceAndPWA() {
   }, []);
 
   const promptInstall = async () => {
-    if (!deferredPrompt) return false;
+    if (!deferredPrompt || isStandalone) return false;
     try {
-      deferredPrompt.prompt();
+      await deferredPrompt.prompt();
       const choiceResult = await deferredPrompt.userChoice;
-      if (choiceResult.outcome === 'accepted') {
-        setIsInstallable(false);
-        setDeferredPrompt(null);
-        return true;
-      }
+      return choiceResult.outcome === 'accepted';
     } catch (err) {
       console.error('PWA install prompt error:', err);
+      return false;
+    } finally {
+      // A beforeinstallprompt event is one-shot, regardless of user choice.
+      setIsInstallable(false);
+      setDeferredPrompt(null);
     }
-    return false;
   };
 
   return {

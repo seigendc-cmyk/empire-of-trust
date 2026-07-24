@@ -6,3 +6,9 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Security: private keys and secrets
+keys/private/
+*.private.jwk
+secrets/
+keys/public/

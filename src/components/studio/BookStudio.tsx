@@ -3,7 +3,7 @@ import {
   Plus, Edit3, Trash2, Eye, Share2, UploadCloud, Download, CheckCircle2, 
   Sparkles, BookOpen, Layers, DollarSign, Database, FileCode, Copy,
   MessageSquare, Key, Phone, Check, Archive, ArchiveRestore, Tag, Search,
-  RefreshCw, Hash, FileDown, FileText, Tv, User, Compass, Users, Shield, MoreVertical, Store
+  RefreshCw, Hash, FileDown, FileText, Tv, User, Compass, Users, Shield, MoreVertical, Store, AlertTriangle
 } from 'lucide-react';
 import { Book, Chapter, ContentBlock, FrontCover, BackCover, ReferenceItem, ReaderProfile, DEFAULT_BOOK_CATEGORIES, BookNumberingConfig, BookFrontMatter, BookSeriesConfig, Character, CharacterAsset } from '../../types';
 import { DocumentEditor } from './DocumentEditor';
@@ -18,9 +18,16 @@ import { AuthorContributorsModal } from './AuthorContributorsModal';
 import { CharacterAssetModal } from './CharacterAssetModal';
 import { ActivationDashboard } from './ActivationDashboard';
 import { VendorMarketingStudio } from './VendorMarketingStudio';
-import { saveBookToSQLite, deleteBookFromSQLite, getAllLocalBooks } from '../../lib/sqlite';
+import { SeriesBookStudio } from './SeriesBookStudio';
+import {
+  saveBookToSQLite,
+  deleteBookFromSQLite,
+  getAllLocalBooks,
+  getSQLiteEngineState,
+  retrySQLiteInitialization,
+  subscribeSQLiteEngineState,
+} from '../../lib/sqlite';
 import { publishBookToFirestore, fetchPublishedBooksFromFirestore } from '../../lib/firebase';
-import { createBookDataPack, downloadBookDataPackFile, getOrCreateDeviceId } from '../../lib/dataPack';
 import { generateRandomPopCode, formatPublisherReplyMessage, cleanPhoneNumber } from '../../lib/accessCodes';
 import { exportBookToPDF } from '../../lib/pdfExporter';
 import { DebouncedSaveQueue } from '../../lib/debouncedSave';
@@ -31,6 +38,7 @@ interface BookStudioProps {
 }
 
 export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
+  const [studioMode, setStudioMode] = useState<'books' | 'series'>('books');
   const [books, setBooks] = useState<Book[]>([]);
   const [activeBookId, setActiveBookId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'content' | 'covers' | 'references' | 'publish' | 'marketing'>('content');
@@ -45,6 +53,8 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishSuccessMessage, setPublishSuccessMessage] = useState<string | null>(null);
+  const [sqliteEngineState, setSqliteEngineState] = useState(getSQLiteEngineState);
+  const [isRetryingSQLite, setIsRetryingSQLite] = useState(false);
 
   // Publisher POP Code Generator State
   const [generatedPopCode, setGeneratedPopCode] = useState<string | null>(null);
@@ -139,7 +149,9 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
     loadLocalBooks();
   }, []);
 
-  const loadLocalBooks = async () => {
+  useEffect(() => subscribeSQLiteEngineState(setSqliteEngineState), []);
+
+  const loadLocalBooks = async (): Promise<Book[]> => {
     try {
       const local = await getAllLocalBooks();
       if (local.length > 0) {
@@ -150,6 +162,7 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
             setActiveChapterId(local[0].chapters[0].id);
           }
         }
+        return local;
       } else {
         // Create initial default sample book
         const sample = createSampleBook();
@@ -157,9 +170,11 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
         setBooks([sample]);
         setActiveBookId(sample.id);
         setActiveChapterId(sample.chapters[0].id);
+        return [sample];
       }
     } catch (err) {
       console.error('Error loading SQLite books:', err);
+      return [];
     }
   };
 
@@ -186,10 +201,30 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
     }
   };
 
-  const switchActiveTab = async (tab: 'content' | 'covers' | 'references' | 'publish' | 'marketing') => {
-    if (await flushSave()) {
-      setActiveTab(tab);
+  const handleRetrySQLite = async () => {
+    setIsRetryingSQLite(true);
+    try {
+      await retrySQLiteInitialization();
+      await loadLocalBooks();
+    } catch {
+      // The shared engine state exposes the controlled error to the panel.
+    } finally {
+      setIsRetryingSQLite(false);
     }
+  };
+
+  const switchActiveTab = (tab: 'content' | 'covers' | 'references' | 'publish' | 'marketing') => {
+    setActiveTab(tab);
+    void flushSave()
+      .then((saved) => {
+        if (!saved) {
+          setSaveStatus('Save failed');
+        }
+      })
+      .catch((error) => {
+        console.error('Background save failed during tab navigation:', error);
+        setSaveStatus('Save failed');
+      });
   };
 
   const switchActiveBook = async (book: Book) => {
@@ -554,14 +589,75 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
   const handleExportDataPack = async () => {
     if (!activeBook) return;
     if (!(await flushSave())) return;
-    const deviceId = getOrCreateDeviceId();
-    const phone = user?.phoneNumber || readerPhoneForActivation || '';
-    const pack = createBookDataPack(activeBook, phone, deviceId);
-    await downloadBookDataPackFile(pack);
+    alert('Signed v3.0.0 data packs must be issued by the external publisher signing workflow. Browser export is disabled because the private signing key must never be shipped to the frontend.');
   };
+
+  if (studioMode === 'series') {
+    return (
+      <SeriesBookStudio
+        books={books}
+        currentUserId={user?.uid || 'local-owner'}
+        currentUserName={user?.displayName || 'Local Owner'}
+        onBackToBooks={() => setStudioMode('books')}
+        onBooksChanged={loadLocalBooks}
+        onOpenBook={(book, destination) => {
+          setBooks((current) => current.some((item) => item.id === book.id)
+            ? current.map((item) => item.id === book.id ? book : item)
+            : [book, ...current]
+          );
+          setActiveBookId(book.id);
+          setActiveChapterId(book.chapters[0]?.id || '');
+          setActiveTab(destination);
+          setStudioView('active');
+          setStudioMode('books');
+        }}
+      />
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+      {sqliteEngineState.status === 'unavailable' && (
+        <section
+          role="alert"
+          className="rounded-xl border border-red-300 bg-red-50 p-5 text-red-950 shadow-sm"
+        >
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
+              <div>
+                <h2 className="font-bold">Local book storage is unavailable</h2>
+                <p className="mt-1 text-sm text-red-800">
+                  SQLite could not start, so Studio changes cannot be saved locally. Your existing IndexedDB data has not been deleted.
+                </p>
+                {sqliteEngineState.error && (
+                  <p className="mt-2 break-words font-mono text-xs text-red-700">
+                    {sqliteEngineState.error}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              <button
+                type="button"
+                onClick={() => void handleRetrySQLite()}
+                disabled={isRetryingSQLite}
+                className="inline-flex items-center gap-2 rounded-md bg-red-700 px-4 py-2 text-xs font-bold text-white hover:bg-red-800 disabled:opacity-60"
+              >
+                <RefreshCw className={`h-4 w-4 ${isRetryingSQLite ? 'animate-spin' : ''}`} />
+                {isRetryingSQLite ? 'Retrying…' : 'Retry'}
+              </button>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="rounded-md border border-red-300 bg-white px-4 py-2 text-xs font-bold text-red-800 hover:bg-red-100"
+              >
+                Reload
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
       
       {/* Studio Header & Action Controls */}
       <div className="bg-white border border-[#e0e0e0] rounded-xl p-6 shadow-sm space-y-4">
@@ -591,6 +687,15 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
 
           {/* Top Action Buttons */}
           <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+            <button
+              id="studio-series-btn"
+              type="button"
+              onClick={() => setStudioMode('series')}
+              className="flex-1 md:flex-initial flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-md border border-[#cfd3d7] bg-white hover:bg-[#f5f6f7] text-[#2c2c2c] font-bold text-xs transition-colors"
+            >
+              <Layers className="w-3.5 h-3.5 text-[#ff6321]" />
+              Series Book Studio
+            </button>
             <button
               onClick={handleSyncPublishedCloudBooks}
               disabled={isSyncingCloud}
@@ -844,8 +949,9 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
           <div className="bg-white border border-[#e0e0e0] rounded-xl p-2 flex flex-wrap items-center justify-between gap-2 shadow-sm">
             <div className="flex flex-wrap items-center gap-1 text-xs font-semibold">
               <button
+                type="button"
                 id="tab-content"
-                onClick={() => void switchActiveTab('content')}
+                onClick={() => switchActiveTab('content')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-md transition-all ${
                   activeTab === 'content'
                     ? 'bg-[#ff6321] text-white shadow-sm font-bold'
@@ -856,8 +962,9 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
               </button>
 
               <button
+                type="button"
                 id="tab-covers"
-                onClick={() => void switchActiveTab('covers')}
+                onClick={() => switchActiveTab('covers')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-md transition-all ${
                   activeTab === 'covers'
                     ? 'bg-[#ff6321] text-white shadow-sm font-bold'
@@ -868,8 +975,9 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
               </button>
 
               <button
+                type="button"
                 id="tab-references"
-                onClick={() => void switchActiveTab('references')}
+                onClick={() => switchActiveTab('references')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-md transition-all ${
                   activeTab === 'references'
                     ? 'bg-[#ff6321] text-white shadow-sm font-bold'
@@ -880,8 +988,9 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
               </button>
 
               <button
+                type="button"
                 id="tab-publish"
-                onClick={() => void switchActiveTab('publish')}
+                onClick={() => switchActiveTab('publish')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-md transition-all ${
                   activeTab === 'publish'
                     ? 'bg-[#ff6321] text-white shadow-sm font-bold'
@@ -892,8 +1001,9 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
               </button>
 
               <button
+                type="button"
                 id="tab-marketing"
-                onClick={() => void switchActiveTab('marketing')}
+                onClick={() => switchActiveTab('marketing')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-md transition-all cursor-pointer ${
                   activeTab === 'marketing'
                     ? 'bg-orange-600 text-white shadow-sm font-bold'
@@ -1132,7 +1242,7 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
                     blocks={activeChapter.blocks}
                     onChangeBlocks={handleUpdateChapterBlocks}
                     references={activeBook.references}
-                    onAddReference={() => void switchActiveTab('references')}
+                    onAddReference={() => switchActiveTab('references')}
                   />
                 ) : (
                   <div className="p-8 text-center bg-[#1e2023] rounded-2xl border border-gray-800 text-gray-400">

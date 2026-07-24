@@ -12,6 +12,8 @@ This foundation currently covers:
 - corrupt-byte preservation and startup status reporting;
 - debounced, ordered Book Studio saves.
 
+Book licence packages use the separate [signed data-pack v3 architecture](../security/signed-datapack-v3.md). Version 3 packages are signed outside the browser and verified locally with public keys; legacy 2.5 packages are read-only migration inputs.
+
 ## IndexedDB layout
 
 The browser database is `BookPublisher_SQLite_DB`, with an object store named `sqlite_bytes`.

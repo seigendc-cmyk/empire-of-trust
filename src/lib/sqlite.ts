@@ -87,7 +87,7 @@ export interface LocalDatabaseRestoreResult {
   message: string;
 }
 
-export const DATABASE_SCHEMA_VERSION = 3;
+export const DATABASE_SCHEMA_VERSION = 4;
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -618,6 +618,177 @@ export const databaseMigrations: readonly DatabaseMigration[] = [
         CREATE INDEX IF NOT EXISTS idx_series_timeline_order
           ON series_timeline_events(series_id, sequence_number);
       `);
+    },
+  },
+  {
+    version: 4,
+    name: 'add_interactive_series_production_studio',
+    up: (db) => {
+      db.run(`
+        CREATE TABLE IF NOT EXISTS series_staff_assignments (
+          id TEXT PRIMARY KEY, series_id TEXT NOT NULL, user_id TEXT NOT NULL,
+          display_name TEXT NOT NULL DEFAULT '', role TEXT NOT NULL,
+          scope_type TEXT NOT NULL, scope_id TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+          UNIQUE(series_id,user_id,role,scope_type,scope_id),
+          FOREIGN KEY(series_id) REFERENCES series_projects(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS series_permissions (
+          id TEXT PRIMARY KEY, assignment_id TEXT NOT NULL, permission TEXT NOT NULL,
+          allowed INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+          UNIQUE(assignment_id,permission),
+          FOREIGN KEY(assignment_id) REFERENCES series_staff_assignments(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS series_chapters (
+          id TEXT PRIMARY KEY, series_id TEXT NOT NULL, season_id TEXT NOT NULL,
+          episode_id TEXT NOT NULL, chapter_number INTEGER NOT NULL, title TEXT NOT NULL,
+          synopsis TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'draft',
+          order_index INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+          UNIQUE(episode_id,chapter_number),
+          FOREIGN KEY(series_id) REFERENCES series_projects(id) ON DELETE CASCADE,
+          FOREIGN KEY(season_id) REFERENCES series_seasons(id) ON DELETE RESTRICT,
+          FOREIGN KEY(episode_id) REFERENCES series_episodes(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS series_scenes (
+          id TEXT PRIMARY KEY, series_id TEXT NOT NULL, season_id TEXT NOT NULL,
+          episode_id TEXT NOT NULL, chapter_id TEXT NOT NULL, scene_number INTEGER NOT NULL,
+          title TEXT NOT NULL, purpose TEXT NOT NULL DEFAULT '', synopsis TEXT NOT NULL DEFAULT '',
+          opening_situation TEXT NOT NULL DEFAULT '', conflict TEXT NOT NULL DEFAULT '',
+          turning_point TEXT NOT NULL DEFAULT '', outcome TEXT NOT NULL DEFAULT '',
+          location_id TEXT, character_ids_json TEXT NOT NULL DEFAULT '[]',
+          asset_ids_json TEXT NOT NULL DEFAULT '[]', possession_ids_json TEXT NOT NULL DEFAULT '[]',
+          story_date TEXT, story_time TEXT NOT NULL DEFAULT '', weather TEXT NOT NULL DEFAULT '',
+          status TEXT NOT NULL DEFAULT 'draft', order_index INTEGER NOT NULL DEFAULT 0,
+          archived_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+          UNIQUE(chapter_id,scene_number),
+          FOREIGN KEY(series_id) REFERENCES series_projects(id) ON DELETE CASCADE,
+          FOREIGN KEY(chapter_id) REFERENCES series_chapters(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS series_story_blocks (
+          id TEXT PRIMARY KEY, series_id TEXT NOT NULL, chapter_id TEXT NOT NULL,
+          scene_id TEXT NOT NULL, block_type TEXT NOT NULL, content TEXT NOT NULL DEFAULT '',
+          image_asset_id TEXT, caption TEXT NOT NULL DEFAULT '', order_index INTEGER NOT NULL DEFAULT 0,
+          created_by TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+          FOREIGN KEY(series_id) REFERENCES series_projects(id) ON DELETE CASCADE,
+          FOREIGN KEY(chapter_id) REFERENCES series_chapters(id) ON DELETE CASCADE,
+          FOREIGN KEY(scene_id) REFERENCES series_scenes(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS series_story_block_links (
+          id TEXT PRIMARY KEY, block_id TEXT NOT NULL, entity_type TEXT NOT NULL,
+          entity_id TEXT NOT NULL, label TEXT NOT NULL, start_offset INTEGER NOT NULL DEFAULT 0,
+          end_offset INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
+          FOREIGN KEY(block_id) REFERENCES series_story_blocks(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS series_characters (
+          id TEXT PRIMARY KEY, series_id TEXT NOT NULL, source_book_character_id TEXT,
+          name TEXT NOT NULL, aliases_json TEXT NOT NULL DEFAULT '[]', description TEXT NOT NULL DEFAULT '',
+          status TEXT NOT NULL DEFAULT 'alive', death_scene_id TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+          UNIQUE(series_id,source_book_character_id),
+          FOREIGN KEY(series_id) REFERENCES series_projects(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS series_actors (
+          id TEXT PRIMARY KEY, series_id TEXT NOT NULL, name TEXT NOT NULL,
+          bio TEXT NOT NULL DEFAULT '', contact_notes TEXT NOT NULL DEFAULT '', image_asset_id TEXT,
+          created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+          FOREIGN KEY(series_id) REFERENCES series_projects(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS series_character_actor_assignments (
+          id TEXT PRIMARY KEY, series_id TEXT NOT NULL, character_id TEXT NOT NULL, actor_id TEXT NOT NULL,
+          assignment_type TEXT NOT NULL, season_id TEXT, episode_id TEXT, start_date TEXT, end_date TEXT,
+          notes TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+          UNIQUE(character_id,actor_id,assignment_type,season_id,episode_id),
+          FOREIGN KEY(series_id) REFERENCES series_projects(id) ON DELETE CASCADE,
+          FOREIGN KEY(character_id) REFERENCES series_characters(id) ON DELETE CASCADE,
+          FOREIGN KEY(actor_id) REFERENCES series_actors(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS series_assets (
+          id TEXT PRIMARY KEY, series_id TEXT NOT NULL, name TEXT NOT NULL, asset_type TEXT NOT NULL,
+          description TEXT NOT NULL DEFAULT '', owner_character_id TEXT, custodian_character_id TEXT,
+          status TEXT NOT NULL DEFAULT 'available', acquired_scene_id TEXT, lost_scene_id TEXT,
+          destroyed_scene_id TEXT, first_appearance_scene_id TEXT, continuity_notes TEXT NOT NULL DEFAULT '',
+          file_url TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+          FOREIGN KEY(series_id) REFERENCES series_projects(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS series_character_possessions (
+          id TEXT PRIMARY KEY, series_id TEXT NOT NULL, asset_id TEXT NOT NULL, character_id TEXT NOT NULL,
+          status TEXT NOT NULL, acquired_scene_id TEXT, transferred_scene_id TEXT,
+          transferred_to_character_id TEXT, lost_scene_id TEXT, destroyed_scene_id TEXT,
+          notes TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+          FOREIGN KEY(series_id) REFERENCES series_projects(id) ON DELETE CASCADE,
+          FOREIGN KEY(asset_id) REFERENCES series_assets(id) ON DELETE RESTRICT,
+          FOREIGN KEY(character_id) REFERENCES series_characters(id) ON DELETE RESTRICT
+        );
+        CREATE TABLE IF NOT EXISTS series_scene_characters (
+          scene_id TEXT NOT NULL, character_id TEXT NOT NULL, required INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY(scene_id,character_id),
+          FOREIGN KEY(scene_id) REFERENCES series_scenes(id) ON DELETE CASCADE,
+          FOREIGN KEY(character_id) REFERENCES series_characters(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS series_scene_assets (
+          scene_id TEXT NOT NULL, asset_id TEXT NOT NULL, usage_note TEXT NOT NULL DEFAULT '',
+          PRIMARY KEY(scene_id,asset_id),
+          FOREIGN KEY(scene_id) REFERENCES series_scenes(id) ON DELETE CASCADE,
+          FOREIGN KEY(asset_id) REFERENCES series_assets(id) ON DELETE RESTRICT
+        );
+        CREATE TABLE IF NOT EXISTS series_dialogue_blocks (
+          id TEXT PRIMARY KEY, series_id TEXT NOT NULL, scene_id TEXT NOT NULL,
+          story_block_id TEXT NOT NULL UNIQUE, character_id TEXT NOT NULL, actor_id TEXT,
+          dialogue TEXT NOT NULL, emotion TEXT NOT NULL DEFAULT '', delivery TEXT NOT NULL DEFAULT '',
+          action_before TEXT NOT NULL DEFAULT '', action_after TEXT NOT NULL DEFAULT '',
+          audio_asset_id TEXT, image_asset_id TEXT, order_index INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+          FOREIGN KEY(series_id) REFERENCES series_projects(id) ON DELETE CASCADE,
+          FOREIGN KEY(scene_id) REFERENCES series_scenes(id) ON DELETE CASCADE,
+          FOREIGN KEY(story_block_id) REFERENCES series_story_blocks(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS series_editorial_reviews (
+          id TEXT PRIMARY KEY, series_id TEXT NOT NULL, scope_type TEXT NOT NULL, scope_id TEXT NOT NULL,
+          status TEXT NOT NULL, assigned_to TEXT, requested_by TEXT, reviewed_by TEXT,
+          review_note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+          FOREIGN KEY(series_id) REFERENCES series_projects(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS series_comments (
+          id TEXT PRIMARY KEY, series_id TEXT NOT NULL, scope_type TEXT NOT NULL, scope_id TEXT NOT NULL,
+          author_id TEXT NOT NULL, body TEXT NOT NULL, mention_user_ids_json TEXT NOT NULL DEFAULT '[]',
+          resolved INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+          FOREIGN KEY(series_id) REFERENCES series_projects(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS series_revision_history (
+          id TEXT PRIMARY KEY, series_id TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL,
+          revision_number INTEGER NOT NULL, changed_by TEXT NOT NULL, summary TEXT NOT NULL DEFAULT '',
+          snapshot TEXT NOT NULL, created_at TEXT NOT NULL,
+          UNIQUE(entity_type,entity_id,revision_number),
+          FOREIGN KEY(series_id) REFERENCES series_projects(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS series_cover_projects (
+          id TEXT PRIMARY KEY, series_id TEXT NOT NULL, season_id TEXT, episode_id TEXT, book_id TEXT,
+          cover_type TEXT NOT NULL, title TEXT NOT NULL DEFAULT '', subtitle TEXT NOT NULL DEFAULT '',
+          author TEXT NOT NULL DEFAULT '', background_image_asset_id TEXT,
+          gradient_start TEXT NOT NULL DEFAULT '#24282c', gradient_end TEXT NOT NULL DEFAULT '#ff6321',
+          series_badge TEXT NOT NULL DEFAULT '', season_badge TEXT NOT NULL DEFAULT '',
+          episode_badge TEXT NOT NULL DEFAULT '', actor_ids_json TEXT NOT NULL DEFAULT '[]',
+          character_ids_json TEXT NOT NULL DEFAULT '[]', publisher_mark_asset_id TEXT,
+          price TEXT NOT NULL DEFAULT '', release_date TEXT, template_id TEXT,
+          status TEXT NOT NULL DEFAULT 'draft', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+          FOREIGN KEY(series_id) REFERENCES series_projects(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_series_chapters_order ON series_chapters(episode_id,order_index);
+        CREATE INDEX IF NOT EXISTS idx_series_scenes_order ON series_scenes(chapter_id,order_index);
+        CREATE INDEX IF NOT EXISTS idx_series_blocks_order ON series_story_blocks(scene_id,order_index);
+        CREATE INDEX IF NOT EXISTS idx_series_staff_scope ON series_staff_assignments(series_id,scope_type,scope_id);
+        CREATE INDEX IF NOT EXISTS idx_series_revisions_entity ON series_revision_history(entity_type,entity_id,revision_number);
+      `);
+      const relationshipColumns = new Set(
+        (db.exec('PRAGMA table_info(series_relationships);')[0]?.values ?? []).map((row) => String(row[1]))
+      );
+      const additions: ReadonlyArray<readonly [string,string]> = [
+        ['conflict_level','INTEGER NOT NULL DEFAULT 0'],['active','INTEGER NOT NULL DEFAULT 1'],
+        ['betrayal',"TEXT NOT NULL DEFAULT ''"],['reconciliation',"TEXT NOT NULL DEFAULT ''"],
+        ['created_at',"TEXT NOT NULL DEFAULT ''"],['updated_at',"TEXT NOT NULL DEFAULT ''"],
+      ];
+      for (const [column,definition] of additions) {
+        if (!relationshipColumns.has(column)) db.run(`ALTER TABLE series_relationships ADD COLUMN ${column} ${definition};`);
+      }
     },
   },
 ];

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle, ArrowLeft, BookCopy, CalendarDays, Database, Image, LayoutDashboard,
-  ListChecks, Plus, RefreshCw, ScrollText, ShieldCheck, Users, Globe2,
+  ListChecks, Plus, RefreshCw, ScrollText, ShieldCheck, Users, Globe2, Clapperboard,
 } from 'lucide-react';
 import {
   Book, EpisodeProductionChecklist, SeriesContinuityRule, SeriesEpisode, SeriesLocation,
@@ -35,8 +35,11 @@ import { SeriesReadinessPanel } from './series/SeriesReadinessPanel';
 import { SeriesPreviewPanel } from './series/SeriesPreviewPanel';
 import { SeasonDetailPanel } from './series/SeasonDetailPanel';
 import { SeriesDistributionPanel } from './series/SeriesDistributionPanel';
+import { InteractiveSeriesProductionStudio } from './series/InteractiveSeriesProductionStudio';
+import type { SeriesPermission, SeriesPermissionGrant, SeriesStaffAssignment } from '../../types/seriesProduction';
+import { assignSeriesStaff, assertSeriesPermission, getPermissionGrants, getSeriesStaff } from '../../lib/seriesProductionRepository';
 
-type Workspace = 'dashboard' | 'structure' | 'bible' | 'cast' | 'timeline' | 'continuity' | 'release' | 'assets' | 'preview' | 'distribution';
+type Workspace = 'dashboard' | 'production' | 'structure' | 'bible' | 'cast' | 'timeline' | 'continuity' | 'release' | 'assets' | 'preview' | 'distribution';
 type BookDestination = 'content' | 'covers' | 'publish' | 'marketing';
 
 interface SeriesBookStudioProps {
@@ -44,17 +47,20 @@ interface SeriesBookStudioProps {
   onBackToBooks: () => void;
   onBooksChanged: () => Promise<Book[]>;
   onOpenBook: (book: Book, destination: BookDestination) => void;
+  currentUserId: string;
+  currentUserName: string;
 }
 
 const navigation: Array<[Workspace, string, React.ComponentType<{ className?: string }>]> = [
   ['dashboard','Dashboard',LayoutDashboard],['structure','Seasons & Episodes',BookCopy],
+  ['production','Production Studio',Clapperboard],
   ['bible','Story Bible',ScrollText],['cast','Characters & Arcs',Users],
   ['timeline','Timeline',CalendarDays],['continuity','Continuity',ShieldCheck],
   ['release','Release Planner',ListChecks],['assets','Assets',Image],['preview','Reader Preview',BookCopy],
   ['distribution','Publish & POP',Globe2],
 ];
 
-export const SeriesBookStudio: React.FC<SeriesBookStudioProps> = ({ books, onBackToBooks, onBooksChanged, onOpenBook }) => {
+export const SeriesBookStudio: React.FC<SeriesBookStudioProps> = ({ books, onBackToBooks, onBooksChanged, onOpenBook, currentUserId, currentUserName }) => {
   const [projects, setProjects] = useState<SeriesProject[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>();
   const [seasons, setSeasons] = useState<SeriesSeason[]>([]);
@@ -73,6 +79,8 @@ export const SeriesBookStudio: React.FC<SeriesBookStudioProps> = ({ books, onBac
   const [locations, setLocations] = useState<SeriesLocation[]>([]);
   const [objects, setObjects] = useState<SeriesObject[]>([]);
   const [checklist, setChecklist] = useState<EpisodeProductionChecklist>();
+  const [productionStaff, setProductionStaff] = useState<SeriesStaffAssignment[]>([]);
+  const [productionGrants, setProductionGrants] = useState<SeriesPermissionGrant[]>([]);
 
   const project = projects.find((item) => item.id === selectedProjectId);
   const selectedSeason = seasons.find((item) => item.id === selectedSeasonId);
@@ -114,11 +122,14 @@ export const SeriesBookStudio: React.FC<SeriesBookStudioProps> = ({ books, onBac
   const loadProjectData = useCallback(async (seriesId: string) => {
     setError('');
     try {
-      const [nextSeasons, nextEpisodes, nextArcs, nextRelationships, nextTimeline, nextRules, nextLocations, nextObjects] = await Promise.all([
+      const [nextSeasons, nextEpisodes, nextArcs, nextRelationships, nextTimeline, nextRules, nextLocations, nextObjects, nextStaff, nextGrants] = await Promise.all([
         getSeasonsForSeries(seriesId), getEpisodesForSeries(seriesId), getStoryArcs(seriesId),
         getSeriesRelationships(seriesId), getTimelineEvents(seriesId), getContinuityRules(seriesId),
-        getSeriesLocations(seriesId), getSeriesObjects(seriesId),
+        getSeriesLocations(seriesId), getSeriesObjects(seriesId), getSeriesStaff(seriesId), getPermissionGrants(seriesId),
       ]);
+      if (nextStaff.length === 0) {
+        nextStaff.push(await assignSeriesStaff({seriesId,userId:currentUserId,displayName:currentUserName,role:'owner',scopeType:'series',scopeId:seriesId,active:true}));
+      }
       setSeasons(nextSeasons);
       setEpisodes(nextEpisodes);
       setArcs(nextArcs);
@@ -127,12 +138,14 @@ export const SeriesBookStudio: React.FC<SeriesBookStudioProps> = ({ books, onBac
       setRules(nextRules);
       setLocations(nextLocations);
       setObjects(nextObjects);
+      setProductionStaff(nextStaff);
+      setProductionGrants(nextGrants);
       setSelectedSeasonId((current) => nextSeasons.some((item) => item.id === current) ? current : nextSeasons[0]?.id);
       setSelectedEpisodeId((current) => nextEpisodes.some((item) => item.id === current) ? current : nextEpisodes[0]?.id);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to load series structure.');
     }
-  }, []);
+  }, [currentUserId, currentUserName]);
 
   useEffect(() => { void loadProjects(); }, [loadProjects]);
   useEffect(() => { if (selectedProjectId) void loadProjectData(selectedProjectId); }, [loadProjectData, selectedProjectId]);
@@ -141,9 +154,14 @@ export const SeriesBookStudio: React.FC<SeriesBookStudioProps> = ({ books, onBac
     void getEpisodeChecklist(selectedEpisodeId).then(setChecklist).catch(() => setChecklist(undefined));
   }, [selectedEpisodeId]);
 
-  const run = async (operation: () => Promise<void>) => {
+  const authorize = (permission: SeriesPermission) => {
+    if (!selectedProjectId) throw new Error('Select a series first.');
+    assertSeriesPermission(currentUserId, permission, {scopeType:'series',scopeId:selectedProjectId}, productionStaff, productionGrants);
+  };
+  const run = async (operation: () => Promise<void>, permission: SeriesPermission = 'edit') => {
     setError('');
     try {
+      authorize(permission);
       await operation();
       if (selectedProjectId) await loadProjectData(selectedProjectId);
     } catch (cause) {
@@ -157,7 +175,7 @@ export const SeriesBookStudio: React.FC<SeriesBookStudioProps> = ({ books, onBac
     void run(async () => {
       const season = await createSeason({ seriesId: project.id, seasonNumber, title: `Season ${seasonNumber}`, orderIndex: seasons.length });
       setSelectedSeasonId(season.id);
-    });
+    }, 'create');
   };
   const addEpisode = () => {
     if (!project || !selectedSeason) return;
@@ -165,14 +183,16 @@ export const SeriesBookStudio: React.FC<SeriesBookStudioProps> = ({ books, onBac
     void run(async () => {
       const episode = await createEpisode({ seriesId: project.id, seasonId: selectedSeason.id, episodeNumber, title: `Episode ${episodeNumber}`, orderIndex: seasonEpisodes.length });
       setSelectedEpisodeId(episode.id);
-    });
+    }, 'create');
   };
   const saveEpisode = async (episode: SeriesEpisode) => {
+    authorize('edit');
     const updated = await updateEpisode(episode.id, episode);
     setEpisodes((current) => current.map((item) => item.id === updated.id ? updated : item));
   };
   const saveProject = async (update: Partial<SeriesProject>) => {
     if (!project) return;
+    authorize('edit');
     const updated = await updateSeriesProject(project.id, update);
     setProjects((current) => current.map((item) => item.id === updated.id ? updated : item));
   };
@@ -241,19 +261,20 @@ export const SeriesBookStudio: React.FC<SeriesBookStudioProps> = ({ books, onBac
               {workspace === 'dashboard' && <SeriesDashboard project={project} seasons={seasons} episodes={episodes} books={books} warnings={warnings} />}
               {workspace === 'structure' && (
                 <div className="grid min-w-0 gap-4 xl:grid-cols-[240px_300px_minmax(340px,1fr)]">
-                  <SeasonManager seasons={seasons} episodes={episodes} selectedSeasonId={selectedSeasonId} onSelect={setSelectedSeasonId} onAdd={addSeason} onDuplicate={(id) => void run(async () => { await duplicateSeasonStructure(id); })} onArchive={(season) => void run(async () => { await updateSeason(season.id,{status:'archived'}); })} onDelete={(id) => { if (window.confirm('Delete this empty season?')) void run(async () => deleteSeason(id,true)); }} onReorder={(ids) => void run(async () => reorderSeasons(project.id,ids))} />
-                  <EpisodeManager episodes={seasonEpisodes} books={books} selectedEpisodeId={selectedEpisodeId} onSelect={setSelectedEpisodeId} onAdd={addEpisode} onDuplicate={(id) => void run(async () => { await duplicateEpisodeOutline(id); })} onCreateBook={(id) => void createLinkedBookFromEpisode(id).then(async (book) => { await onBooksChanged(); onOpenBook(book,'content'); }).catch((cause) => setError(cause instanceof Error ? cause.message : 'Unable to create linked book.'))} onLinkBook={(episodeId,bookId) => void run(async () => { await linkEpisodeToBook(episodeId,bookId); await onBooksChanged(); })} onUnlink={(id) => { if (window.confirm('Unlink this manuscript? The book will not be deleted.')) void run(async () => unlinkEpisodeFromBook(id)); }} onArchive={(episode) => void run(async () => { await updateEpisode(episode.id,{status:'archived'}); })} onDelete={(id) => { if (window.confirm('Delete this unlinked episode?')) void run(async () => deleteEpisode(id,true)); }} onReorder={(ids) => selectedSeasonId && void run(async () => reorderEpisodes(selectedSeasonId,ids))} />
-                  <div className="min-w-0 space-y-4">{selectedSeason && <SeasonDetailPanel season={selectedSeason} onSave={async (season) => { await updateSeason(season.id, season); await loadProjectData(project.id); }} />}{selectedEpisode ? <><EpisodeDetailPanel episode={selectedEpisode} seasons={seasons} onSave={saveEpisode} onOpenBook={(bookId,destination) => { const book = books.find((item) => item.id === bookId); if (book) onOpenBook(book,destination); }} /><SeriesReadinessPanel readiness={readiness} checklist={checklist} onChecklistChange={async (next) => { await saveEpisodeChecklist(next); setChecklist(next); }} /></> : <div className="border border-dashed border-[#bfc4c8] bg-white p-8 text-center text-sm text-[#777]">Select an episode to open its planning inspector.</div>}</div>
+                  <SeasonManager seasons={seasons} episodes={episodes} selectedSeasonId={selectedSeasonId} onSelect={setSelectedSeasonId} onAdd={addSeason} onDuplicate={(id) => void run(async () => { await duplicateSeasonStructure(id); },'create')} onArchive={(season) => void run(async () => { await updateSeason(season.id,{status:'archived'}); })} onDelete={(id) => { if (window.confirm('Delete this empty season?')) void run(async () => deleteSeason(id,true),'delete'); }} onReorder={(ids) => void run(async () => reorderSeasons(project.id,ids))} />
+                  <EpisodeManager episodes={seasonEpisodes} books={books} selectedEpisodeId={selectedEpisodeId} onSelect={setSelectedEpisodeId} onAdd={addEpisode} onDuplicate={(id) => void run(async () => { await duplicateEpisodeOutline(id); },'create')} onCreateBook={(id) => { try { authorize('create'); void createLinkedBookFromEpisode(id).then(async (book) => { await onBooksChanged(); onOpenBook(book,'content'); }).catch((cause) => setError(cause instanceof Error ? cause.message : 'Unable to create linked book.')); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Permission denied.'); } }} onLinkBook={(episodeId,bookId) => void run(async () => { await linkEpisodeToBook(episodeId,bookId); await onBooksChanged(); })} onUnlink={(id) => { if (window.confirm('Unlink this manuscript? The book will not be deleted.')) void run(async () => unlinkEpisodeFromBook(id)); }} onArchive={(episode) => void run(async () => { await updateEpisode(episode.id,{status:'archived'}); })} onDelete={(id) => { if (window.confirm('Delete this unlinked episode?')) void run(async () => deleteEpisode(id,true),'delete'); }} onReorder={(ids) => selectedSeasonId && void run(async () => reorderEpisodes(selectedSeasonId,ids))} />
+                  <div className="min-w-0 space-y-4">{selectedSeason && <SeasonDetailPanel season={selectedSeason} onSave={async (season) => { authorize('edit'); await updateSeason(season.id, season); await loadProjectData(project.id); }} />}{selectedEpisode ? <><EpisodeDetailPanel episode={selectedEpisode} seasons={seasons} onSave={saveEpisode} onOpenBook={(bookId,destination) => { const book = books.find((item) => item.id === bookId); if (book) onOpenBook(book,destination); }} /><SeriesReadinessPanel readiness={readiness} checklist={checklist} onChecklistChange={async (next) => { authorize('approve'); await saveEpisodeChecklist(next); setChecklist(next); }} /></> : <div className="border border-dashed border-[#bfc4c8] bg-white p-8 text-center text-sm text-[#777]">Select an episode to open its planning inspector.</div>}</div>
                 </div>
               )}
-              {workspace === 'bible' && <StoryBiblePanel project={project} onSave={saveProject} locations={locations} objects={objects} rules={rules} onAddLocation={async (location) => { await saveSeriesLocation(location); setLocations(await getSeriesLocations(project.id)); }} onAddObject={async (object) => { await saveSeriesObject(object); setObjects(await getSeriesObjects(project.id)); }} onAddRule={async (rule) => { await saveContinuityRule(rule); setRules(await getContinuityRules(project.id)); }} />}
-              {workspace === 'cast' && <CharacterArcPanel seriesId={project.id} characters={characters} arcs={arcs} relationships={relationships} onSaveArc={async (arc) => { await saveStoryArc(arc); setArcs(await getStoryArcs(project.id)); }} onSaveRelationship={async (relationship) => { await saveSeriesRelationship(relationship); setRelationships(await getSeriesRelationships(project.id)); }} />}
-              {workspace === 'timeline' && <TimelinePanel seriesId={project.id} seasons={seasons} episodes={episodes} events={timeline} onSave={async (event) => { await saveTimelineEvent(event); setTimeline(await getTimelineEvents(project.id)); }} />}
+              {workspace === 'production' && <InteractiveSeriesProductionStudio project={project} seasons={seasons} episodes={episodes} currentUserId={currentUserId} currentUserName={currentUserName} />}
+              {workspace === 'bible' && <StoryBiblePanel project={project} onSave={saveProject} locations={locations} objects={objects} rules={rules} onAddLocation={async (location) => { authorize('create'); await saveSeriesLocation(location); setLocations(await getSeriesLocations(project.id)); }} onAddObject={async (object) => { authorize('create'); await saveSeriesObject(object); setObjects(await getSeriesObjects(project.id)); }} onAddRule={async (rule) => { authorize('edit'); await saveContinuityRule(rule); setRules(await getContinuityRules(project.id)); }} />}
+              {workspace === 'cast' && <CharacterArcPanel seriesId={project.id} characters={characters} arcs={arcs} relationships={relationships} onSaveArc={async (arc) => { authorize('edit'); await saveStoryArc(arc); setArcs(await getStoryArcs(project.id)); }} onSaveRelationship={async (relationship) => { authorize('edit'); await saveSeriesRelationship(relationship); setRelationships(await getSeriesRelationships(project.id)); }} />}
+              {workspace === 'timeline' && <TimelinePanel seriesId={project.id} seasons={seasons} episodes={episodes} events={timeline} onSave={async (event) => { authorize('edit'); await saveTimelineEvent(event); setTimeline(await getTimelineEvents(project.id)); }} />}
               {workspace === 'continuity' && <ContinuityPanel warnings={[...warnings,...rules.filter((rule) => rule.active).map((rule) => ({code:`rule-${rule.category}`,severity:rule.severity === 'error' ? 'error' as const : 'warning' as const,message:rule.statement,episodeId:rule.sourceEpisodeId}))]} />}
               {workspace === 'release' && <ReleasePlanner episodes={episodes} onSave={saveEpisode} />}
               {workspace === 'assets' && <SeriesAssetsPanel project={project} onSave={saveProject} />}
               {workspace === 'preview' && <SeriesPreviewPanel project={project} season={selectedSeason} episode={selectedEpisode} />}
-              {workspace === 'distribution' && <SeriesDistributionPanel project={project} seasons={seasons} episodes={episodes} books={books} />}
+              {workspace === 'distribution' && <SeriesDistributionPanel project={project} seasons={seasons} episodes={episodes} books={books} authorize={authorize} />}
             </div>
           )}
         </main>

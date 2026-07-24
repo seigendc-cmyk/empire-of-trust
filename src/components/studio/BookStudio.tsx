@@ -596,6 +596,8 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth }) => {
     return (
       <SeriesBookStudio
         books={books}
+        currentUserId={user?.uid || 'local-owner'}
+        currentUserName={user?.displayName || 'Local Owner'}
         onBackToBooks={() => setStudioMode('books')}
         onBooksChanged={loadLocalBooks}
         onOpenBook={(book, destination) => {

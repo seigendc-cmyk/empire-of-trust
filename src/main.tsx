@@ -10,9 +10,13 @@ import 'katex/dist/katex.min.css';
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
+<<<<<<< HEAD
       <StaffAuthProvider>
         <App />
       </StaffAuthProvider>
+=======
+      <App />
+>>>>>>> origin/main
     </BrowserRouter>
   </StrictMode>,
 );

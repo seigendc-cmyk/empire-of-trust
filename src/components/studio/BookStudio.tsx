@@ -18,7 +18,6 @@ import { AuthorContributorsModal } from './AuthorContributorsModal';
 import { CharacterAssetModal } from './CharacterAssetModal';
 import { ActivationDashboard } from './ActivationDashboard';
 import { VendorMarketingStudio } from './VendorMarketingStudio';
-import { SeriesBookStudio } from './SeriesBookStudio';
 import {
   saveBookToSQLite,
   deleteBookFromSQLite,
@@ -35,12 +34,19 @@ import { DebouncedSaveQueue } from '../../lib/debouncedSave';
 interface BookStudioProps {
   user: ReaderProfile | null;
   onOpenAuth: () => void;
+<<<<<<< HEAD
   initialMode?: 'books' | 'series';
   initialBookId?: string;
 }
 
 export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth, initialMode = 'books', initialBookId }) => {
   const [studioMode, setStudioMode] = useState<'books' | 'series'>(initialMode);
+=======
+  initialBookId?: string;
+}
+
+export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth, initialBookId }) => {
+>>>>>>> origin/main
   const [books, setBooks] = useState<Book[]>([]);
   const [activeBookId, setActiveBookId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'content' | 'covers' | 'references' | 'publish' | 'marketing'>('content');
@@ -595,29 +601,6 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth, initia
     alert('Signed v3.0.0 data packs must be issued by the external publisher signing workflow. Browser export is disabled because the private signing key must never be shipped to the frontend.');
   };
 
-  if (studioMode === 'series') {
-    return (
-      <SeriesBookStudio
-        books={books}
-        currentUserId={user?.uid || 'local-owner'}
-        currentUserName={user?.displayName || 'Local Owner'}
-        onBackToBooks={() => setStudioMode('books')}
-        onBooksChanged={loadLocalBooks}
-        onOpenBook={(book, destination) => {
-          setBooks((current) => current.some((item) => item.id === book.id)
-            ? current.map((item) => item.id === book.id ? book : item)
-            : [book, ...current]
-          );
-          setActiveBookId(book.id);
-          setActiveChapterId(book.chapters[0]?.id || '');
-          setActiveTab(destination);
-          setStudioView('active');
-          setStudioMode('books');
-        }}
-      />
-    );
-  }
-
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
       {sqliteEngineState.status === 'unavailable' && (
@@ -690,15 +673,6 @@ export const BookStudio: React.FC<BookStudioProps> = ({ user, onOpenAuth, initia
 
           {/* Top Action Buttons */}
           <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
-            <button
-              id="studio-series-btn"
-              type="button"
-              onClick={() => setStudioMode('series')}
-              className="flex-1 md:flex-initial flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-md border border-[#cfd3d7] bg-white hover:bg-[#f5f6f7] text-[#2c2c2c] font-bold text-xs transition-colors"
-            >
-              <Layers className="w-3.5 h-3.5 text-[#ff6321]" />
-              Series Book Studio
-            </button>
             <button
               onClick={handleSyncPublishedCloudBooks}
               disabled={isSyncingCloud}

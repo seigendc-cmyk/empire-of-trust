@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle, ArrowLeft, BookCopy, CalendarDays, Database, Image, LayoutDashboard,
-  ListChecks, Plus, RefreshCw, ScrollText, ShieldCheck, Users, Globe2, Clapperboard,
+  ListChecks, Plus, RefreshCw, ScrollText, ShieldCheck, Users, Globe2,
 } from 'lucide-react';
 import {
   Book, EpisodeProductionChecklist, SeriesContinuityRule, SeriesEpisode, SeriesLocation,
@@ -35,11 +35,10 @@ import { SeriesReadinessPanel } from './series/SeriesReadinessPanel';
 import { SeriesPreviewPanel } from './series/SeriesPreviewPanel';
 import { SeasonDetailPanel } from './series/SeasonDetailPanel';
 import { SeriesDistributionPanel } from './series/SeriesDistributionPanel';
-import { InteractiveSeriesProductionStudio } from './series/InteractiveSeriesProductionStudio';
 import type { SeriesPermission, SeriesPermissionGrant, SeriesStaffAssignment } from '../../types/seriesProduction';
 import { assignSeriesStaff, assertSeriesPermission, getPermissionGrants, getSeriesStaff } from '../../lib/seriesProductionRepository';
 
-type Workspace = 'dashboard' | 'production' | 'structure' | 'bible' | 'cast' | 'timeline' | 'continuity' | 'release' | 'assets' | 'preview' | 'distribution';
+type Workspace = 'dashboard' | 'structure' | 'bible' | 'cast' | 'timeline' | 'continuity' | 'release' | 'assets' | 'preview' | 'distribution';
 type BookDestination = 'content' | 'covers' | 'publish' | 'marketing';
 
 interface SeriesBookStudioProps {
@@ -49,18 +48,19 @@ interface SeriesBookStudioProps {
   onOpenBook: (book: Book, destination: BookDestination) => void;
   currentUserId: string;
   currentUserName: string;
+  initialSeriesId?: string;
+  onOpenProduction: (seriesId: string) => void;
 }
 
 const navigation: Array<[Workspace, string, React.ComponentType<{ className?: string }>]> = [
   ['dashboard','Dashboard',LayoutDashboard],['structure','Seasons & Episodes',BookCopy],
-  ['production','Production Studio',Clapperboard],
   ['bible','Story Bible',ScrollText],['cast','Characters & Arcs',Users],
   ['timeline','Timeline',CalendarDays],['continuity','Continuity',ShieldCheck],
   ['release','Release Planner',ListChecks],['assets','Assets',Image],['preview','Reader Preview',BookCopy],
   ['distribution','Publish & POP',Globe2],
 ];
 
-export const SeriesBookStudio: React.FC<SeriesBookStudioProps> = ({ books, onBackToBooks, onBooksChanged, onOpenBook, currentUserId, currentUserName }) => {
+export const SeriesBookStudio: React.FC<SeriesBookStudioProps> = ({ books, onBackToBooks, onBooksChanged, onOpenBook, currentUserId, currentUserName, initialSeriesId, onOpenProduction }) => {
   const [projects, setProjects] = useState<SeriesProject[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>();
   const [seasons, setSeasons] = useState<SeriesSeason[]>([]);
@@ -147,7 +147,7 @@ export const SeriesBookStudio: React.FC<SeriesBookStudioProps> = ({ books, onBac
     }
   }, [currentUserId, currentUserName]);
 
-  useEffect(() => { void loadProjects(); }, [loadProjects]);
+  useEffect(() => { void loadProjects(initialSeriesId); }, [initialSeriesId, loadProjects]);
   useEffect(() => { if (selectedProjectId) void loadProjectData(selectedProjectId); }, [loadProjectData, selectedProjectId]);
   useEffect(() => {
     if (!selectedEpisodeId) return setChecklist(undefined);
@@ -257,7 +257,7 @@ export const SeriesBookStudio: React.FC<SeriesBookStudioProps> = ({ books, onBac
             <div className="flex min-h-96 flex-col items-center justify-center border border-dashed border-[#bfc4c8] bg-white p-8 text-center"><Database className="h-9 w-9 text-[#858b90]" /><h2 className="mt-3 text-xl font-extrabold">No series projects yet</h2><p className="mt-1 max-w-md text-sm text-[#666]">Create a normalized series project or convert confirmed legacy Book Series settings.</p><button onClick={() => setCreating(true)} className="mt-5 rounded-md bg-[#ff6321] px-4 py-2 text-sm font-bold text-white">Create Series</button></div>
           ) : (
             <div className="space-y-4">
-              <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex items-center gap-2"><h2 className="text-2xl font-extrabold">{project.title}</h2><span className="border border-[#bfc4c8] px-2 py-0.5 text-[10px] font-bold uppercase">{project.status}</span></div><p className="text-sm text-[#666]">{project.subtitle || project.seriesPromise || 'Series planning workspace'}</p></div></div>
+              <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex items-center gap-2"><h2 className="text-2xl font-extrabold">{project.title}</h2><span className="border border-[#bfc4c8] px-2 py-0.5 text-[10px] font-bold uppercase">{project.status}</span></div><p className="text-sm text-[#666]">{project.subtitle || project.seriesPromise || 'Series planning workspace'}</p></div><button type="button" onClick={() => onOpenProduction(project.id)} className="border border-[#ff6321] bg-white px-3 py-2 text-xs font-bold text-[#c7460e]">Open Production Console</button></div>
               {workspace === 'dashboard' && <SeriesDashboard project={project} seasons={seasons} episodes={episodes} books={books} warnings={warnings} />}
               {workspace === 'structure' && (
                 <div className="grid min-w-0 gap-4 xl:grid-cols-[240px_300px_minmax(340px,1fr)]">
@@ -266,7 +266,6 @@ export const SeriesBookStudio: React.FC<SeriesBookStudioProps> = ({ books, onBac
                   <div className="min-w-0 space-y-4">{selectedSeason && <SeasonDetailPanel season={selectedSeason} onSave={async (season) => { authorize('edit'); await updateSeason(season.id, season); await loadProjectData(project.id); }} />}{selectedEpisode ? <><EpisodeDetailPanel episode={selectedEpisode} seasons={seasons} onSave={saveEpisode} onOpenBook={(bookId,destination) => { const book = books.find((item) => item.id === bookId); if (book) onOpenBook(book,destination); }} /><SeriesReadinessPanel readiness={readiness} checklist={checklist} onChecklistChange={async (next) => { authorize('approve'); await saveEpisodeChecklist(next); setChecklist(next); }} /></> : <div className="border border-dashed border-[#bfc4c8] bg-white p-8 text-center text-sm text-[#777]">Select an episode to open its planning inspector.</div>}</div>
                 </div>
               )}
-              {workspace === 'production' && <InteractiveSeriesProductionStudio project={project} seasons={seasons} episodes={episodes} currentUserId={currentUserId} currentUserName={currentUserName} />}
               {workspace === 'bible' && <StoryBiblePanel project={project} onSave={saveProject} locations={locations} objects={objects} rules={rules} onAddLocation={async (location) => { authorize('create'); await saveSeriesLocation(location); setLocations(await getSeriesLocations(project.id)); }} onAddObject={async (object) => { authorize('create'); await saveSeriesObject(object); setObjects(await getSeriesObjects(project.id)); }} onAddRule={async (rule) => { authorize('edit'); await saveContinuityRule(rule); setRules(await getContinuityRules(project.id)); }} />}
               {workspace === 'cast' && <CharacterArcPanel seriesId={project.id} characters={characters} arcs={arcs} relationships={relationships} onSaveArc={async (arc) => { authorize('edit'); await saveStoryArc(arc); setArcs(await getStoryArcs(project.id)); }} onSaveRelationship={async (relationship) => { authorize('edit'); await saveSeriesRelationship(relationship); setRelationships(await getSeriesRelationships(project.id)); }} />}
               {workspace === 'timeline' && <TimelinePanel seriesId={project.id} seasons={seasons} episodes={episodes} events={timeline} onSave={async (event) => { authorize('edit'); await saveTimelineEvent(event); setTimeline(await getTimelineEvents(project.id)); }} />}

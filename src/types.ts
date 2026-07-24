@@ -1,5 +1,3 @@
-export type AppView = 'studio' | 'portal' | 'reader';
-
 export type BlockType = 
   | 'heading' 
   | 'paragraph' 

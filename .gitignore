@@ -12,3 +12,10 @@ keys/private/
 *.private.jwk
 secrets/
 keys/public/
+
+# Local AI agent and deployment files
+.agents/
+.codex/
+.firebase/
+.kilo/
+skills-lock.json
